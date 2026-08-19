@@ -9,6 +9,40 @@ Assert(
     controller.EvaluateReadiness(true, contract, onGround) == "Ready to start flight.",
     "An on-ground 1x telemetry sample should be ready.");
 
+var c172Contract = new ContractAssignment(
+    ContractId: "C172-TEST",
+    DepartureName: "Munich",
+    ArrivalName: "Nuremberg",
+    RequiredAircraftTitleContains: "Cessna 172 Skyhawk",
+    DepartureLatitudeDegrees: null,
+    DepartureLongitudeDegrees: null,
+    DepartureRadiusNauticalMiles: 2)
+{
+    AircraftIcao = "C172",
+};
+Assert(
+    controller.EvaluateReadiness(
+        true,
+        c172Contract,
+        Sample(
+            onGround: true,
+            altitudeAgl: 5,
+            aircraftTitle: "C172SP G1000 Passengers",
+            aircraftAtcModel: "C172"))
+        == "Ready to start flight.",
+    "A configurable C172 passenger variant should match the required Cessna 172 Skyhawk.");
+Assert(
+    controller.EvaluateReadiness(
+        true,
+        c172Contract,
+        Sample(
+            onGround: true,
+            altitudeAgl: 5,
+            aircraftTitle: "Beechcraft Baron G58",
+            aircraftAtcModel: "BE58"))
+        == "Select the required aircraft: Cessna 172 Skyhawk.",
+    "An unrelated aircraft must not pass the normalized aircraft check.");
+
 controller.Start(Guid.NewGuid(), onGround);
 Assert(controller.Phase == FlightPhase.Started, "Start must enter Started.");
 
@@ -25,9 +59,15 @@ Assert(controller.Phase == FlightPhase.Finished, "Finish must enter Finished.");
 Console.WriteLine("PCareer desktop flight lifecycle checks passed.");
 return;
 
-static TelemetrySnapshot Sample(bool onGround, double altitudeAgl) => new(
+static TelemetrySnapshot Sample(
+    bool onGround,
+    double altitudeAgl,
+    string aircraftTitle = "Cessna 172 Skyhawk",
+    string aircraftAtcModel = "C172") => new(
     ObservedAt: DateTimeOffset.UtcNow,
-    AircraftTitle: "Cessna 172 Skyhawk",
+    AircraftTitle: aircraftTitle,
+    AircraftAtcModel: aircraftAtcModel,
+    AircraftAtcType: "Cessna",
     LatitudeDegrees: 52.3667,
     LongitudeDegrees: 13.5033,
     AltitudeFeet: 2500,
@@ -54,4 +94,3 @@ static void Assert(bool condition, string message)
         throw new InvalidOperationException(message);
     }
 }
-

@@ -4,6 +4,22 @@ namespace PCareer.Client.Services;
 
 public sealed class FlightSessionController
 {
+    private static readonly HashSet<string> IgnoredAircraftNameTokens = new(
+        new[]
+        {
+            "airbus",
+            "beechcraft",
+            "boeing",
+            "cessna",
+            "cirrus",
+            "dehavilland",
+            "diamond",
+            "embraer",
+            "piper",
+            "pilatus",
+        },
+        StringComparer.OrdinalIgnoreCase);
+
     public FlightPhase Phase { get; private set; } = FlightPhase.Ready;
 
     public Guid? FlightId { get; private set; }
@@ -46,9 +62,7 @@ public sealed class FlightSessionController
         }
 
         if (!string.IsNullOrWhiteSpace(contract.RequiredAircraftTitleContains)
-            && !telemetry.AircraftTitle.Contains(
-                contract.RequiredAircraftTitleContains,
-                StringComparison.OrdinalIgnoreCase))
+            && !AircraftMatches(contract, telemetry))
         {
             return $"Select the required aircraft: {contract.RequiredAircraftTitleContains}.";
         }
@@ -110,6 +124,77 @@ public sealed class FlightSessionController
         Phase = FlightPhase.Finished;
     }
 
+    internal static bool AircraftMatches(
+        ContractAssignment contract,
+        TelemetrySnapshot telemetry)
+    {
+        var expectedIcao = NormalizeAircraftIdentifier(contract.AircraftIcao);
+        if (expectedIcao.Length >= 3)
+        {
+            var atcModel = NormalizeAircraftIdentifier(telemetry.AircraftAtcModel);
+            if (atcModel == expectedIcao || atcModel.StartsWith(expectedIcao, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            var titleIdentifier = NormalizeAircraftIdentifier(telemetry.AircraftTitle);
+            if (titleIdentifier.Contains(expectedIcao, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return AircraftNamesMatch(
+            contract.RequiredAircraftTitleContains ?? string.Empty,
+            telemetry.AircraftTitle);
+    }
+
+    private static bool AircraftNamesMatch(string requiredName, string simulatorTitle)
+    {
+        if (simulatorTitle.Contains(requiredName, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var requiredTokens = AircraftNameTokens(requiredName)
+            .Where(token => !IgnoredAircraftNameTokens.Contains(token))
+            .ToArray();
+        if (requiredTokens.Length == 0)
+        {
+            requiredTokens = AircraftNameTokens(requiredName).ToArray();
+        }
+        var simulatorTokens = AircraftNameTokens(simulatorTitle).ToHashSet(
+            StringComparer.OrdinalIgnoreCase);
+        return requiredTokens.Length > 0
+            && requiredTokens.All(simulatorTokens.Contains);
+    }
+
+    private static string NormalizeAircraftIdentifier(string? value) =>
+        string.Concat((value ?? string.Empty)
+            .Where(char.IsLetterOrDigit))
+            .ToUpperInvariant();
+
+    private static IEnumerable<string> AircraftNameTokens(string value)
+    {
+        var token = new System.Text.StringBuilder();
+        foreach (var character in value)
+        {
+            if (char.IsLetterOrDigit(character))
+            {
+                token.Append(char.ToLowerInvariant(character));
+            }
+            else if (token.Length > 0)
+            {
+                yield return token.ToString();
+                token.Clear();
+            }
+        }
+        if (token.Length > 0)
+        {
+            yield return token.ToString();
+        }
+    }
+
     private static double DistanceNauticalMiles(
         double latitude1,
         double longitude1,
@@ -132,4 +217,3 @@ public sealed class FlightSessionController
 
     private static double DegreesToRadians(double degrees) => degrees * Math.PI / 180d;
 }
-

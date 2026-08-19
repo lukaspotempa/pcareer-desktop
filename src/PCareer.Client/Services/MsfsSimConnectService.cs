@@ -22,6 +22,10 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
     {
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)]
         public string AircraftTitle;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)]
+        public string AircraftAtcModel;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)]
+        public string AircraftAtcType;
         public double LatitudeDegrees;
         public double LongitudeDegrees;
         public double AltitudeFeet;
@@ -157,6 +161,20 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
             SIMCONNECT_DATATYPE.STRING256,
             0,
             SimConnect.SIMCONNECT_UNUSED);
+        connection.AddToDataDefinition(
+            DataDefinition.UserAircraft,
+            "ATC MODEL",
+            null,
+            SIMCONNECT_DATATYPE.STRING256,
+            0,
+            SimConnect.SIMCONNECT_UNUSED);
+        connection.AddToDataDefinition(
+            DataDefinition.UserAircraft,
+            "ATC TYPE",
+            null,
+            SIMCONNECT_DATATYPE.STRING256,
+            0,
+            SimConnect.SIMCONNECT_UNUSED);
         AddFloat64(connection, "PLANE LATITUDE", "degrees");
         AddFloat64(connection, "PLANE LONGITUDE", "degrees");
         AddFloat64(connection, "PLANE ALTITUDE", "feet");
@@ -201,6 +219,8 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
             new TelemetrySnapshot(
                 ObservedAt: DateTimeOffset.UtcNow,
                 AircraftTitle: sample.AircraftTitle?.TrimEnd('\0') ?? "Unknown aircraft",
+                AircraftAtcModel: sample.AircraftAtcModel?.TrimEnd('\0') ?? string.Empty,
+                AircraftAtcType: sample.AircraftAtcType?.TrimEnd('\0') ?? string.Empty,
                 LatitudeDegrees: sample.LatitudeDegrees,
                 LongitudeDegrees: sample.LongitudeDegrees,
                 AltitudeFeet: sample.AltitudeFeet,

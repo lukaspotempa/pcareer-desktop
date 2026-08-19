@@ -3,6 +3,8 @@ namespace PCareer.Client.Models;
 public sealed record TelemetrySnapshot(
     DateTimeOffset ObservedAt,
     string AircraftTitle,
+    string AircraftAtcModel,
+    string AircraftAtcType,
     double LatitudeDegrees,
     double LongitudeDegrees,
     double AltitudeFeet,
@@ -21,4 +23,3 @@ public sealed record TelemetrySnapshot(
     int EngineCount,
     double GearPositionPercent,
     bool ParkingBrakeSet);
-

@@ -35,7 +35,26 @@ internal static class Program
                 : 0;
         }
 
-        Application.Run(new MainForm());
+        var serverUrl = Environment.GetEnvironmentVariable("PCAREER_SERVER_URL")
+            ?? "http://localhost:8000/";
+        if (!Uri.TryCreate(serverUrl, UriKind.Absolute, out var serverUri))
+        {
+            MessageBox.Show(
+                $"PCAREER_SERVER_URL is invalid: {serverUrl}",
+                "PCareer configuration error",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+            return 3;
+        }
+
+        using var api = new PCareerApiClient(serverUri);
+        using var login = new LoginForm(api);
+        if (login.ShowDialog() != DialogResult.OK || login.Session is null)
+        {
+            return 0;
+        }
+
+        Application.Run(new MainForm(api, login.Session));
         return 0;
     }
 }
