@@ -17,11 +17,22 @@
     <DefineConstants>$(DefineConstants);SIMCONNECT_AVAILABLE</DefineConstants>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(PublishSingleFile)' == 'true'">
+    <DefineConstants>$(DefineConstants);SINGLE_FILE_PUBLISH</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup Condition="Exists('$(SimConnectAssemblyPath)')">
     <Reference Include="Microsoft.FlightSimulator.SimConnect">
       <HintPath>$(SimConnectAssemblyPath)</HintPath>
       <Private>true</Private>
     </Reference>
   </ItemGroup>
-</Project>
 
+  <ItemGroup Condition="Exists('$(SimConnectNativePath)')">
+    <Content Include="$(SimConnectNativePath)">
+      <Link>SimConnect.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+</Project>

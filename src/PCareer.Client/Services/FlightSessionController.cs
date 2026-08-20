@@ -124,10 +124,29 @@ public sealed class FlightSessionController
         Phase = FlightPhase.Finished;
     }
 
+    public void ResetForNextFlight()
+    {
+        if (Phase is not FlightPhase.Finished)
+        {
+            throw new InvalidOperationException(
+                "Only a finished flight session can be reset.");
+        }
+
+        FlightId = null;
+        StartedAt = null;
+        Phase = FlightPhase.Ready;
+    }
+
     internal static bool AircraftMatches(
         ContractAssignment contract,
         TelemetrySnapshot telemetry)
     {
+        if (contract.AircraftSimulatorIdentities.Count > 0)
+        {
+            return contract.AircraftSimulatorIdentities.Any(identity =>
+                SimulatorIdentityMatches(identity, telemetry));
+        }
+
         var expectedIcao = NormalizeAircraftIdentifier(contract.AircraftIcao);
         if (expectedIcao.Length >= 3)
         {
@@ -147,6 +166,32 @@ public sealed class FlightSessionController
         return AircraftNamesMatch(
             contract.RequiredAircraftTitleContains ?? string.Empty,
             telemetry.AircraftTitle);
+    }
+
+    private static bool SimulatorIdentityMatches(
+        AircraftSimulatorIdentity identity,
+        TelemetrySnapshot telemetry)
+    {
+        var candidate = identity.IdentityField switch
+        {
+            "atc_model" => telemetry.AircraftAtcModel,
+            "title" => telemetry.AircraftTitle,
+            _ => string.Empty,
+        };
+        var normalizedCandidate = NormalizeAircraftIdentifier(candidate);
+        var expected = NormalizeAircraftIdentifier(identity.MatchValue);
+        if (normalizedCandidate.Length == 0 || expected.Length == 0)
+        {
+            return false;
+        }
+
+        return identity.MatchMode switch
+        {
+            "exact" => normalizedCandidate == expected,
+            "prefix" => normalizedCandidate.StartsWith(expected, StringComparison.Ordinal),
+            "contains" => normalizedCandidate.Contains(expected, StringComparison.Ordinal),
+            _ => false,
+        };
     }
 
     private static bool AircraftNamesMatch(string requiredName, string simulatorTitle)

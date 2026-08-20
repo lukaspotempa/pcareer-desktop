@@ -36,7 +36,7 @@ internal static class Program
         }
 
         var serverUrl = Environment.GetEnvironmentVariable("PCAREER_SERVER_URL")
-            ?? "http://localhost:8000/";
+            ?? "https://career.virtual-pilot.com/";
         if (!Uri.TryCreate(serverUrl, UriKind.Absolute, out var serverUri))
         {
             MessageBox.Show(

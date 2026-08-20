@@ -15,6 +15,17 @@ public sealed record ContractAssignment(
 
     public string AircraftIcao { get; init; } = string.Empty;
 
+    public IReadOnlyList<AircraftSimulatorIdentity> AircraftSimulatorIdentities { get; init; } =
+        Array.Empty<AircraftSimulatorIdentity>();
+
+    public string AirlineIcao { get; init; } = "PCX";
+
+    public string FlightNumber { get; init; } = string.Empty;
+
+    public string FlightDesignator => string.IsNullOrWhiteSpace(FlightNumber)
+        ? AirlineIcao.Trim().ToUpperInvariant()
+        : $"{AirlineIcao.Trim().ToUpperInvariant()}{FlightNumber.Trim()}";
+
     public string RouteDisplay =>
         string.IsNullOrWhiteSpace(DepartureCode) || string.IsNullOrWhiteSpace(ArrivalCode)
             ? $"{DepartureName} → {ArrivalName}"

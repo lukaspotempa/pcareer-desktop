@@ -19,7 +19,17 @@ var c172Contract = new ContractAssignment(
     DepartureRadiusNauticalMiles: 2)
 {
     AircraftIcao = "C172",
+    AircraftSimulatorIdentities = new[]
+    {
+        new AircraftSimulatorIdentity("msfs_2024", "atc_model", "prefix", "C172"),
+        new AircraftSimulatorIdentity("msfs_2024", "title", "contains", "C172SP"),
+    },
+    AirlineIcao = "pcx",
+    FlightNumber = "4821",
 };
+Assert(
+    c172Contract.FlightDesignator == "PCX4821",
+    "The public flight designator should not expose the internal contract ID.");
 Assert(
     controller.EvaluateReadiness(
         true,
@@ -55,6 +65,18 @@ Assert(controller.CanFinish, "A landed flight must be finishable.");
 
 controller.Finish();
 Assert(controller.Phase == FlightPhase.Finished, "Finish must enter Finished.");
+
+controller.ResetForNextFlight();
+Assert(controller.Phase == FlightPhase.Ready, "Reset must return the controller to Ready.");
+Assert(controller.FlightId is null, "Reset must clear the previous flight identifier.");
+Assert(controller.StartedAt is null, "Reset must clear the previous start time.");
+Assert(!controller.CanFinish, "A reset flight must not remain finishable.");
+Assert(
+    controller.EvaluateReadiness(true, contract, onGround) == "Ready to start flight.",
+    "A reset controller must allow the next eligible flight to start.");
+
+controller.Start(Guid.NewGuid(), onGround);
+Assert(controller.Phase == FlightPhase.Started, "A second flight must start without restarting the app.");
 
 Console.WriteLine("PCareer desktop flight lifecycle checks passed.");
 return;

@@ -277,7 +277,7 @@ public sealed class MainForm : Form
             _contract = await _serverClient.GetActiveContractAsync();
             _contractLabel.Text = _contract is null
                 ? "None · Accept a contract on the PCareer website, then refresh."
-                : $"{_contract.ContractId}  ·  {_contract.RouteDisplay}  ·  {_contract.RequiredAircraftDisplay}";
+                : $"{_contract.FlightDesignator}  ·  {_contract.RouteDisplay}  ·  {_contract.RequiredAircraftDisplay}";
         }
         catch (Exception exception)
         {
@@ -389,19 +389,32 @@ public sealed class MainForm : Form
             _finishButton.Enabled = false;
             await _serverClient.FinishFlightAsync(flightId, _latestTelemetry);
             _flight.Finish();
-            _flightStatusLabel.Text = FlightStatusText();
+            ResetAfterCompletedFlight();
             MessageBox.Show(
                 this,
                 "The server confirmed the flight and completed the active contract.",
                 "Flight complete",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
+            await LoadActiveContractAsync();
         }
         catch (Exception exception)
         {
             MessageBox.Show(this, exception.Message, "Could not finish flight", MessageBoxButtons.OK, MessageBoxIcon.Error);
             _finishButton.Enabled = _flight.CanFinish;
         }
+    }
+
+    private void ResetAfterCompletedFlight()
+    {
+        _flight.ResetForNextFlight();
+        _contract = null;
+        _contractLabel.Text = "None · Accept a contract on the PCareer website, then refresh.";
+        _telemetryServerLabel.Text = "Waiting for an active flight.";
+        _telemetryServerLabel.ForeColor = Color.FromArgb(235, 241, 237);
+        _flightStatusLabel.Text = FlightStatusText();
+        _finishButton.Enabled = false;
+        UpdateReadiness();
     }
 
     private string FlightStatusText()

@@ -92,6 +92,16 @@ public sealed class PCareerApiClient : IFlightServerClient, IDisposable
             DepartureCode = active.StartAirport.Icao,
             ArrivalCode = active.EndAirport.Icao,
             AircraftIcao = active.AircraftIcao,
+            AircraftSimulatorIdentities = (active.AircraftSimulatorIdentities ?? [])
+                .Where(identity => identity.Simulator == "msfs_2024")
+                .Select(identity => new AircraftSimulatorIdentity(
+                    identity.Simulator,
+                    identity.IdentityField,
+                    identity.MatchMode,
+                    identity.MatchValue))
+                .ToArray(),
+            AirlineIcao = active.AirlineIcao ?? "PCX",
+            FlightNumber = active.FlightNumber,
         };
     }
 
@@ -341,10 +351,19 @@ public sealed class PCareerApiClient : IFlightServerClient, IDisposable
     private sealed record ContractDto(
         string ContractId,
         string Status,
+        string? AirlineIcao,
+        string FlightNumber,
         string Aircraft,
         string AircraftIcao,
+        List<AircraftIdentityDto>? AircraftSimulatorIdentities,
         AirportDto StartAirport,
         AirportDto EndAirport);
+
+    private sealed record AircraftIdentityDto(
+        string Simulator,
+        string IdentityField,
+        string MatchMode,
+        string MatchValue);
 
     private sealed record FlightDto(string FlightId);
 

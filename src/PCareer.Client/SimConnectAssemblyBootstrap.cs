@@ -9,7 +9,7 @@ internal static class SimConnectAssemblyBootstrap
 
     public static bool TryLoad(out string error)
     {
-#if SIMCONNECT_AVAILABLE
+#if SIMCONNECT_AVAILABLE && !SINGLE_FILE_PUBLISH
         var assemblyPath = Path.Combine(AppContext.BaseDirectory, ManagedAssemblyFileName);
         if (!File.Exists(assemblyPath))
         {
@@ -36,4 +36,3 @@ internal static class SimConnectAssemblyBootstrap
         return true;
     }
 }
-
