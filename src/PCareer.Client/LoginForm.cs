@@ -8,81 +8,161 @@ public sealed class LoginForm : Form
 {
     private readonly PCareerApiClient _api;
     private readonly CancellationTokenSource _cancellation = new();
-    private readonly Button _loginButton = new()
-    {
-        Text = "Continue with Discord",
-        AutoSize = true,
-        Height = 44,
-        Padding = new Padding(18, 6, 18, 6),
-        FlatStyle = FlatStyle.Flat,
-        BackColor = Color.FromArgb(88, 101, 242),
-        ForeColor = Color.White,
-    };
-    private readonly Label _statusLabel = new()
-    {
-        Text = "Sign in to connect this client to your PCareer account.",
-        AutoSize = true,
-        MaximumSize = new Size(440, 0),
-        TextAlign = ContentAlignment.MiddleCenter,
-        ForeColor = Color.FromArgb(156, 163, 175),
-    };
+
+    private readonly Label _statusLabel;
+    private readonly Button _loginButton;
 
     public LoginForm(PCareerApiClient api)
     {
         _api = api;
-        Text = "PCareer · Discord login";
+        Text = "Virtual Pilot Network \u00b7 Discord login";
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
-        ClientSize = new Size(520, 330);
-        BackColor = Color.FromArgb(17, 24, 39);
-        ForeColor = Color.FromArgb(243, 244, 246);
+        ClientSize = new Size(440, 400);
+        BackColor = Color.FromArgb(11, 14, 18);
+        ForeColor = Color.FromArgb(241, 245, 249);
         Font = new Font("Segoe UI", 10);
 
-        var layout = new TableLayoutPanel
+        var outerLayout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(36),
             ColumnCount = 1,
-            RowCount = 5,
+            RowCount = 3,
+            BackColor = Color.Transparent,
+            Padding = new Padding(0),
         };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        outerLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        outerLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        outerLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        outerLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-        var mark = new Label
+        // Center row holds the card
+        var centerPanel = new Panel
         {
-            Text = "PC",
-            AutoSize = false,
-            Size = new Size(64, 64),
-            TextAlign = ContentAlignment.MiddleCenter,
-            Anchor = AnchorStyles.None,
-            BackColor = Color.FromArgb(79, 70, 229),
-            ForeColor = Color.White,
-            Font = new Font("Segoe UI", 18, FontStyle.Bold),
+            Dock = DockStyle.Fill,
+            BackColor = Color.Transparent,
         };
+
+        var card = new Panel
+        {
+            Size = new Size(360, 280),
+            Anchor = AnchorStyles.None,
+            BackColor = Color.FromArgb(20, 25, 32),
+        };
+        card.Paint += (_, e) =>
+        {
+            using var pen = new Pen(Color.FromArgb(20, 255, 255, 255)) { Width = 1 };
+            e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            var rect = new Rectangle(0, 0, card.Width - 1, card.Height - 1);
+            e.Graphics.DrawRectangle(pen, rect);
+        };
+
+        var cardInner = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            Padding = new Padding(32, 28, 32, 24),
+            ColumnCount = 1,
+            RowCount = 4,
+            BackColor = Color.Transparent,
+        };
+        cardInner.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        cardInner.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        cardInner.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        cardInner.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        cardInner.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
         var title = new Label
         {
-            Text = "PCareer Flight Client",
+            Text = "Login",
             AutoSize = true,
-            Anchor = AnchorStyles.None,
-            Font = new Font("Segoe UI", 20, FontStyle.Bold),
-            Margin = new Padding(0, 16, 0, 6),
+            Font = new Font("Segoe UI", 22, FontStyle.Bold),
+            ForeColor = Color.White,
+            BackColor = Color.Transparent,
+            Margin = new Padding(0, 0, 0, 6),
         };
-        _statusLabel.Anchor = AnchorStyles.None;
-        _statusLabel.Margin = new Padding(0, 0, 0, 20);
-        _loginButton.Anchor = AnchorStyles.None;
+
+        var subtitle = new Label
+        {
+            Text = "Continue with your Discord account to access your career dashboard.",
+            AutoSize = true,
+            MaximumSize = new Size(296, 0),
+            Font = new Font("Segoe UI", 9.5f),
+            ForeColor = Color.FromArgb(148, 163, 184),
+            BackColor = Color.Transparent,
+            Margin = new Padding(0, 0, 0, 22),
+        };
+
+        _loginButton = new Button
+        {
+            Text = "Continue with Discord",
+            Width = 296,
+            Height = 44,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.FromArgb(88, 101, 242),
+            ForeColor = Color.White,
+            Font = new Font("Segoe UI", 10, FontStyle.Bold),
+            Cursor = Cursors.Hand,
+            Margin = new Padding(0, 0, 0, 12),
+        };
+        _loginButton.FlatAppearance.BorderSize = 0;
         _loginButton.Click += LoginClicked;
 
-        layout.Controls.Add(mark, 0, 0);
-        layout.Controls.Add(title, 0, 1);
-        layout.Controls.Add(_statusLabel, 0, 2);
-        layout.Controls.Add(_loginButton, 0, 3);
-        Controls.Add(layout);
+        _statusLabel = new Label
+        {
+            Text = "",
+            AutoSize = true,
+            MaximumSize = new Size(296, 0),
+            Font = new Font("Segoe UI", 9f),
+            ForeColor = Color.FromArgb(148, 163, 184),
+            BackColor = Color.Transparent,
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.BottomLeft,
+        };
+
+        cardInner.Controls.Add(title, 0, 0);
+        cardInner.Controls.Add(subtitle, 0, 1);
+        cardInner.Controls.Add(_loginButton, 0, 2);
+        cardInner.Controls.Add(_statusLabel, 0, 3);
+        card.Controls.Add(cardInner);
+        centerPanel.Controls.Add(card);
+        outerLayout.Controls.Add(centerPanel, 0, 1);
+
+        // Bottom security note
+        var divider = new Panel
+        {
+            Height = 1,
+            Dock = DockStyle.Top,
+            BackColor = Color.FromArgb(17, 255, 255, 255),
+            Margin = new Padding(32, 0, 32, 10),
+        };
+        var securityNote = new Label
+        {
+            Text = "Authentication is handled directly by Discord. Your password is never shared with Virtual Pilot Network.",
+            AutoSize = true,
+            MaximumSize = new Size(376, 0),
+            Font = new Font("Segoe UI", 8f),
+            ForeColor = Color.FromArgb(100, 116, 139),
+            BackColor = Color.Transparent,
+            Dock = DockStyle.Top,
+            Margin = new Padding(0, 0, 0, 8),
+        };
+        var bottomPanel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            BackColor = Color.Transparent,
+        };
+        bottomPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        bottomPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        bottomPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        bottomPanel.Controls.Add(divider, 0, 0);
+        bottomPanel.Controls.Add(securityNote, 0, 1);
+        outerLayout.Controls.Add(bottomPanel, 0, 2);
+
+        Controls.Add(outerLayout);
         FormClosed += (_, _) => _cancellation.Cancel();
     }
 
@@ -93,7 +173,8 @@ public sealed class LoginForm : Form
         _loginButton.Enabled = false;
         try
         {
-            _statusLabel.Text = "Preparing secure Discord login…";
+            _statusLabel.ForeColor = Color.FromArgb(148, 163, 184);
+            _statusLabel.Text = "Preparing secure Discord login...";
             var login = await _api.BeginDiscordLoginAsync(_cancellation.Token);
             Process.Start(new ProcessStartInfo(login.AuthorizationUrl.AbsoluteUri)
             {
