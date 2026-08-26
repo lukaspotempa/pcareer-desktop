@@ -22,6 +22,10 @@ public sealed record ContractAssignment(
 
     public string FlightNumber { get; init; } = string.Empty;
 
+    public double? RequiredFuelKg { get; init; }
+
+    public double RequiredPayloadKg { get; init; }
+
     public string FlightDesignator => string.IsNullOrWhiteSpace(FlightNumber)
         ? AirlineIcao.Trim().ToUpperInvariant()
         : $"{AirlineIcao.Trim().ToUpperInvariant()}{FlightNumber.Trim()}";
