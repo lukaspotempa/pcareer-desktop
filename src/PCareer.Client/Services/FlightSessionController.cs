@@ -26,11 +26,22 @@ public sealed class FlightSessionController
 
     public DateTimeOffset? StartedAt { get; private set; }
 
+    public double? InitialFuelKg { get; private set; }
+
+    public double? InitialPayloadKg { get; private set; }
+
+    private TelemetrySnapshot? _previousTelemetry;
+
     public string EvaluateReadiness(
         bool simulatorConnected,
         ContractAssignment contract,
         TelemetrySnapshot? telemetry)
     {
+        if (Phase is FlightPhase.Loading)
+        {
+            return LoadingStatus(contract, telemetry);
+        }
+
         if (Phase is not FlightPhase.Ready)
         {
             return "A flight session is already active.";
@@ -81,23 +92,77 @@ public sealed class FlightSessionController
             }
         }
 
-        return "Ready to start flight.";
+        return "Ready to begin loading.";
+    }
+
+    public void BeginLoading()
+    {
+        if (Phase is not FlightPhase.Ready)
+        {
+            throw new InvalidOperationException("The flight is not ready for loading.");
+        }
+        Phase = FlightPhase.Loading;
+    }
+
+    public void AbortLoading()
+    {
+        if (Phase is FlightPhase.Loading)
+        {
+            Phase = FlightPhase.Ready;
+        }
+    }
+
+    public bool LoadsMatch(ContractAssignment contract, TelemetrySnapshot telemetry) =>
+        FuelMatches(contract.RequiredFuelKg, telemetry.FuelTotalKg)
+        && WithinOnePercent(contract.RequiredPayloadKg, telemetry.PayloadWeightKg);
+
+    public string LoadingStatus(ContractAssignment contract, TelemetrySnapshot? telemetry)
+    {
+        var fuelTarget = contract.RequiredFuelKg is double fuel ? $"{fuel:0.0} kg" : "the SimBrief plan";
+        var payloadTarget = $"{contract.RequiredPayloadKg:0.0} kg";
+        if (telemetry is null)
+        {
+            return $"Load fuel {fuelTarget} and payload {payloadTarget} (±1%).";
+        }
+
+        if (LoadsMatch(contract, telemetry))
+        {
+            return "Fuel and payload match — activating flight…";
+        }
+
+        return $"Load fuel {fuelTarget} (now {telemetry.FuelTotalKg:0.0} kg) and payload "
+            + $"{payloadTarget} (now {telemetry.PayloadWeightKg:0.0} kg), ±1%.";
     }
 
     public void Start(Guid flightId, TelemetrySnapshot telemetry)
     {
-        if (Phase is not FlightPhase.Ready)
+        if (Phase is not FlightPhase.Loading)
         {
             throw new InvalidOperationException("A flight has already been started.");
         }
 
         FlightId = flightId;
         StartedAt = telemetry.ObservedAt;
+        InitialFuelKg = telemetry.FuelTotalKg;
+        InitialPayloadKg = telemetry.PayloadWeightKg;
+        _previousTelemetry = telemetry;
         Phase = FlightPhase.Started;
     }
 
-    public void Observe(TelemetrySnapshot telemetry)
+    public string? Observe(TelemetrySnapshot telemetry)
     {
+        if (Phase is not (FlightPhase.Started or FlightPhase.Airborne or FlightPhase.Landed))
+        {
+            return null;
+        }
+
+        var cancellationReason = ValidateActiveTelemetry(telemetry);
+        if (cancellationReason is not null)
+        {
+            Phase = FlightPhase.Cancelled;
+            return cancellationReason;
+        }
+
         if (Phase is FlightPhase.Started && !telemetry.OnGround)
         {
             Phase = FlightPhase.Airborne;
@@ -109,6 +174,8 @@ public sealed class FlightSessionController
         {
             Phase = FlightPhase.Landed;
         }
+        _previousTelemetry = telemetry;
+        return null;
     }
 
     public bool CanFinish => Phase is FlightPhase.Landed && FlightId.HasValue;
@@ -134,8 +201,85 @@ public sealed class FlightSessionController
 
         FlightId = null;
         StartedAt = null;
+        InitialFuelKg = null;
+        InitialPayloadKg = null;
+        _previousTelemetry = null;
         Phase = FlightPhase.Ready;
     }
+
+    public void ResetCancelledFlight()
+    {
+        if (Phase is not FlightPhase.Cancelled)
+        {
+            throw new InvalidOperationException("The flight session is not cancelled.");
+        }
+        FlightId = null;
+        StartedAt = null;
+        InitialFuelKg = null;
+        InitialPayloadKg = null;
+        _previousTelemetry = null;
+        Phase = FlightPhase.Ready;
+    }
+
+    private string? ValidateActiveTelemetry(TelemetrySnapshot telemetry)
+    {
+        if (_previousTelemetry is null || InitialFuelKg is null || InitialPayloadKg is null)
+        {
+            return null;
+        }
+        if (!AircraftIdentityIsUnchanged(_previousTelemetry, telemetry))
+        {
+            return "The simulator aircraft changed after the flight became active.";
+        }
+        if (telemetry.SlewActive || Math.Abs(telemetry.SimulationRate - 1d) > 0.01)
+        {
+            return "Slew mode or a simulation rate other than 1× was detected.";
+        }
+        if (telemetry.FuelTotalKg > InitialFuelKg.Value + ChangeTolerance(InitialFuelKg.Value))
+        {
+            return "Fuel was increased after the flight became active.";
+        }
+        if (Math.Abs(telemetry.PayloadWeightKg - InitialPayloadKg.Value)
+            > ChangeTolerance(InitialPayloadKg.Value))
+        {
+            return "The aircraft payload changed after the flight became active.";
+        }
+
+        var elapsed = telemetry.ObservedAt - _previousTelemetry.ObservedAt;
+        var seconds = Math.Clamp(elapsed.TotalSeconds, 0, 30);
+        var plausibleDistance = Math.Max(
+            5,
+            Math.Max(telemetry.GroundSpeedKnots, _previousTelemetry.GroundSpeedKnots)
+                * seconds / 3600d * 2d + 2d);
+        var actualDistance = DistanceNauticalMiles(
+            _previousTelemetry.LatitudeDegrees,
+            _previousTelemetry.LongitudeDegrees,
+            telemetry.LatitudeDegrees,
+            telemetry.LongitudeDegrees);
+        if (actualDistance > plausibleDistance)
+        {
+            return "The simulator session was left or the aircraft position changed discontinuously.";
+        }
+        return null;
+    }
+
+    private static bool AircraftIdentityIsUnchanged(
+        TelemetrySnapshot previous,
+        TelemetrySnapshot current) =>
+        NormalizeAircraftIdentifier(previous.AircraftAtcModel)
+            == NormalizeAircraftIdentifier(current.AircraftAtcModel)
+        && NormalizeAircraftIdentifier(previous.AircraftTitle)
+            == NormalizeAircraftIdentifier(current.AircraftTitle);
+
+    private static bool FuelMatches(double? target, double actual) =>
+        target is null || WithinOnePercent(target.Value, actual);
+
+    private static bool WithinOnePercent(double target, double actual) =>
+        Math.Abs(actual - target) <= LoadTolerance(target);
+
+    private static double LoadTolerance(double target) => Math.Max(1d, Math.Abs(target) * 0.01d);
+
+    private static double ChangeTolerance(double target) => Math.Max(0.5d, Math.Abs(target) * 0.001d);
 
     internal static bool AircraftMatches(
         ContractAssignment contract,

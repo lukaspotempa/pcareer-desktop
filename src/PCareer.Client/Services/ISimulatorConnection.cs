@@ -12,8 +12,12 @@ public interface ISimulatorConnection : IDisposable
 
     event EventHandler<TelemetrySnapshot>? TelemetryReceived;
 
+    event EventHandler<AircraftSnapshot>? AircraftIdentityReceived;
+
     void TryConnect(IntPtr windowHandle, int messageId);
 
     void ReceiveMessage();
+
+    void RequestAircraftIdentity();
 }
 

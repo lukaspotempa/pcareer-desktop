@@ -102,7 +102,24 @@ public sealed class PCareerApiClient : IFlightServerClient, IDisposable
                 .ToArray(),
             AirlineIcao = active.AirlineIcao ?? "PCX",
             FlightNumber = active.FlightNumber,
+            RequiredFuelKg = active.RequiredFuelKg,
+            RequiredPayloadKg = active.Payloads?.Sum(payload => payload.WeightKg) ?? 0,
         };
+    }
+
+    public async Task<AircraftTransmissionResult> TransmitAircraftAsync(
+        AircraftSnapshot snapshot,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await SendAuthenticatedAsync(
+            () => JsonRequest(HttpMethod.Post, "api/desktop/aircraft/transmit", snapshot),
+            cancellationToken);
+        var body = await ReadRequiredAsync<TransmissionDto>(response, cancellationToken);
+        return new AircraftTransmissionResult(
+            body.Status,
+            body.ModelCode,
+            body.ModelDisplayName,
+            body.IcaoTypeDesignator);
     }
 
     public async Task<Guid> StartFlightAsync(
@@ -148,6 +165,21 @@ public sealed class PCareerApiClient : IFlightServerClient, IDisposable
             cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
         TelemetryStatusChanged?.Invoke(this, "Flight completed and confirmed by server.");
+    }
+
+    public async Task CancelFlightAsync(
+        Guid flightId,
+        string reason,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await SendAuthenticatedAsync(
+            () => JsonRequest(
+                HttpMethod.Post,
+                $"api/desktop/flights/{flightId}/cancel",
+                new { reason }),
+            cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        TelemetryStatusChanged?.Invoke(this, $"Flight cancelled: {reason}");
     }
 
     public async Task LogoutAsync(CancellationToken cancellationToken = default)
@@ -357,7 +389,11 @@ public sealed class PCareerApiClient : IFlightServerClient, IDisposable
         string AircraftIcao,
         List<AircraftIdentityDto>? AircraftSimulatorIdentities,
         AirportDto StartAirport,
-        AirportDto EndAirport);
+        AirportDto EndAirport,
+        double? RequiredFuelKg,
+        List<PayloadDto>? Payloads);
+
+    private sealed record PayloadDto(double WeightKg);
 
     private sealed record AircraftIdentityDto(
         string Simulator,
@@ -366,6 +402,12 @@ public sealed class PCareerApiClient : IFlightServerClient, IDisposable
         string MatchValue);
 
     private sealed record FlightDto(string FlightId);
+
+    private sealed record TransmissionDto(
+        string Status,
+        string ModelCode,
+        string ModelDisplayName,
+        string IcaoTypeDesignator);
 
     private sealed record ApiError(string Detail);
 }

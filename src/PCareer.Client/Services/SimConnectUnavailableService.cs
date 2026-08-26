@@ -17,12 +17,22 @@ internal sealed class SimConnectUnavailableService : ISimulatorConnection
         remove { }
     }
 
+    public event EventHandler<AircraftSnapshot>? AircraftIdentityReceived
+    {
+        add { }
+        remove { }
+    }
+
     public void TryConnect(IntPtr windowHandle, int messageId) =>
         ConnectionChanged?.Invoke(this, EventArgs.Empty);
 
     public void ReceiveMessage()
     {
     }
+
+    public void RequestAircraftIdentity() =>
+        throw new InvalidOperationException(
+            "SimConnect support was not included in this build. Install the MSFS 2024 SDK and rebuild.");
 
     public void Dispose()
     {

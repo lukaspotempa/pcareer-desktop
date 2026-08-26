@@ -18,8 +18,16 @@ public sealed record TelemetrySnapshot(
     bool OnGround,
     bool SlewActive,
     double SimulationRate,
-    double FuelTotalGallons,
+    double FuelTotalKg,
     double TotalWeightPounds,
+    double EmptyWeightPounds,
     int EngineCount,
     double GearPositionPercent,
-    bool ParkingBrakeSet);
+    bool ParkingBrakeSet)
+{
+    private const double KilogramsPerPound = 0.45359237;
+
+    public double PayloadWeightKg => Math.Max(
+        0,
+        (TotalWeightPounds - EmptyWeightPounds) * KilogramsPerPound - FuelTotalKg);
+}
