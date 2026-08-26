@@ -3,7 +3,7 @@
 namespace Microsoft.FlightSimulator.SimConnect;
 
 public enum SIMCONNECT_DATATYPE { FLOAT64, INT32, STRING256 }
-public enum SIMCONNECT_PERIOD { SIM_FRAME }
+public enum SIMCONNECT_PERIOD { SIM_FRAME, ONCE }
 public enum SIMCONNECT_DATA_REQUEST_FLAG { DEFAULT }
 
 public class SIMCONNECT_RECV { }

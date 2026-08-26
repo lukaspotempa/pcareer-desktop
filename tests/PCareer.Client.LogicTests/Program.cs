@@ -6,7 +6,7 @@ var contract = ContractAssignment.DevelopmentFlight;
 var onGround = Sample(onGround: true, altitudeAgl: 5);
 
 Assert(
-    controller.EvaluateReadiness(true, contract, onGround) == "Ready to start flight.",
+    controller.EvaluateReadiness(true, contract, onGround) == "Ready to begin loading.",
     "An on-ground 1x telemetry sample should be ready.");
 
 var c172Contract = new ContractAssignment(
@@ -39,7 +39,7 @@ Assert(
             altitudeAgl: 5,
             aircraftTitle: "C172SP G1000 Passengers",
             aircraftAtcModel: "C172"))
-        == "Ready to start flight.",
+        == "Ready to begin loading.",
     "A configurable C172 passenger variant should match the required Cessna 172 Skyhawk.");
 Assert(
     controller.EvaluateReadiness(
@@ -53,6 +53,8 @@ Assert(
         == "Select the required aircraft: Cessna 172 Skyhawk.",
     "An unrelated aircraft must not pass the normalized aircraft check.");
 
+controller.BeginLoading();
+Assert(controller.Phase == FlightPhase.Loading, "Start must first enter the loading phase.");
 controller.Start(Guid.NewGuid(), onGround);
 Assert(controller.Phase == FlightPhase.Started, "Start must enter Started.");
 
@@ -72,11 +74,23 @@ Assert(controller.FlightId is null, "Reset must clear the previous flight identi
 Assert(controller.StartedAt is null, "Reset must clear the previous start time.");
 Assert(!controller.CanFinish, "A reset flight must not remain finishable.");
 Assert(
-    controller.EvaluateReadiness(true, contract, onGround) == "Ready to start flight.",
+    controller.EvaluateReadiness(true, contract, onGround) == "Ready to begin loading.",
     "A reset controller must allow the next eligible flight to start.");
 
+controller.BeginLoading();
 controller.Start(Guid.NewGuid(), onGround);
 Assert(controller.Phase == FlightPhase.Started, "A second flight must start without restarting the app.");
+var cancellation = controller.Observe(onGround with { FuelTotalKg = 112 });
+Assert(cancellation?.Contains("Fuel was increased") == true, "Refuelling an active flight must cancel it.");
+Assert(controller.Phase == FlightPhase.Cancelled, "A load violation must enter Cancelled.");
+controller.ResetCancelledFlight();
+Assert(controller.Phase == FlightPhase.Ready, "A cancelled session must be resettable.");
+controller.BeginLoading();
+controller.Start(Guid.NewGuid(), onGround);
+var jumped = controller.Observe(onGround with { LatitudeDegrees = 53.3667 });
+Assert(
+    jumped?.Contains("position changed discontinuously") == true,
+    "Reloading at another location must cancel the active flight.");
 
 Console.WriteLine("PCareer desktop flight lifecycle checks passed.");
 return;
@@ -103,8 +117,9 @@ static TelemetrySnapshot Sample(
     OnGround: onGround,
     SlewActive: false,
     SimulationRate: 1,
-    FuelTotalGallons: 40,
+    FuelTotalKg: 108.9,
     TotalWeightPounds: 2300,
+    EmptyWeightPounds: 1663,
     EngineCount: 1,
     GearPositionPercent: 100,
     ParkingBrakeSet: onGround);
