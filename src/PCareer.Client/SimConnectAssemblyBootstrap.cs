@@ -15,7 +15,7 @@ internal static class SimConnectAssemblyBootstrap
         {
             error =
                 $"The managed SimConnect assembly is missing from the application folder:{Environment.NewLine}{assemblyPath}{Environment.NewLine}{Environment.NewLine}"
-                + "Rebuild PCareer with -RequireSimConnect.";
+                + "Rebuild Virtual Pilot Network with -RequireSimConnect.";
             return false;
         }
 

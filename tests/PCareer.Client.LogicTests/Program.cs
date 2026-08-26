@@ -92,7 +92,7 @@ Assert(
     jumped?.Contains("position changed discontinuously") == true,
     "Reloading at another location must cancel the active flight.");
 
-Console.WriteLine("PCareer desktop flight lifecycle checks passed.");
+Console.WriteLine("VPN desktop flight lifecycle checks passed.");
 return;
 
 static TelemetrySnapshot Sample(

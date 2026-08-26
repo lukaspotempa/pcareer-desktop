@@ -82,7 +82,7 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
         try
         {
             var connection = new SimConnect(
-                "PCareer Desktop Client",
+                "Virtual Pilot Network",
                 windowHandle,
                 (uint)messageId,
                 null,

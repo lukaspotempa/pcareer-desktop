@@ -132,7 +132,7 @@ public sealed class MainForm : Form
             connDot = _simulator.IsConnected ? "ok" : "warn",
 
             contract = _contract is null
-                ? "None · Accept a contract on the PCareer website, then refresh."
+                ? "None · Accept a contract on the Virtual Pilot Network website, then refresh."
                 : $"{_contract.FlightDesignator}  ·  {_contract.RouteDisplay}  ·  {_contract.RequiredAircraftDisplay}",
 
             aircraft = _latestTelemetry is null
@@ -191,7 +191,7 @@ public sealed class MainForm : Form
         {
             _contract = await _serverClient.GetActiveContractAsync();
             _contractLabel.Text = _contract is null
-                ? "None · Accept a contract on the PCareer website, then refresh."
+                ? "None · Accept a contract on the Virtual Pilot Network website, then refresh."
                 : $"{_contract.FlightDesignator}  ·  {_contract.RouteDisplay}  ·  {_contract.RequiredAircraftDisplay}";
         }
         catch (Exception exception)
@@ -439,7 +439,7 @@ public sealed class MainForm : Form
     {
         _flight.ResetForNextFlight();
         _contract = null;
-        _contractLabel.Text = "None · Accept a contract on the PCareer website, then refresh.";
+        _contractLabel.Text = "None · Accept a contract on the Virtual Pilot Network website, then refresh.";
         _telemetryServerLabel.Text = "Waiting for an active flight.";
         _flightStatusLabel.Text = FlightStatusText();
         _finishButton.Enabled = false;

@@ -20,5 +20,5 @@ if ($LASTEXITCODE -ne 0) {
     throw "Flight lifecycle checks failed with exit code $LASTEXITCODE"
 }
 
-Write-Host "All PCareer desktop checks passed." -ForegroundColor Green
+Write-Host "All VPN desktop checks passed." -ForegroundColor Green
 

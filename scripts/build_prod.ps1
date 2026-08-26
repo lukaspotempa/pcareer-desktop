@@ -1,5 +1,6 @@
 param(
-    [string]$SimConnectDll = ""
+    [string]$SimConnectDll = "",
+    [string]$Version = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -53,34 +54,36 @@ if (Test-Path -LiteralPath $outputDirectory) {
     Remove-Item -LiteralPath $outputDirectory -Recurse -Force
 }
 
-Write-Host "Building single-file production client with SimConnect support..." -ForegroundColor Green
-& dotnet publish $projectFile `
-    --configuration Release `
-    --runtime win-x64 `
-    --self-contained true `
-    --output $outputDirectory `
-    "-p:SimConnectAssemblyPath=$SimConnectDll" `
-    "-p:SimConnectNativePath=$nativeSimConnectDll" `
-    "-p:PublishSingleFile=true" `
-    "-p:IncludeNativeLibrariesForSelfExtract=true" `
-    "-p:IncludeAllContentForSelfExtract=true" `
-    "-p:EnableCompressionInSingleFile=true" `
-    "-p:PublishTrimmed=false" `
-    "-p:DebugSymbols=false" `
+$publishArgs = @(
+    "publish", $projectFile,
+    "--configuration", "Release",
+    "--runtime", "win-x64",
+    "--self-contained", "true",
+    "--output", $outputDirectory,
+    "-p:SimConnectAssemblyPath=$SimConnectDll",
+    "-p:SimConnectNativePath=$nativeSimConnectDll",
+    "-p:PublishTrimmed=false",
+    "-p:DebugSymbols=false",
     "-p:DebugType=None"
+)
+
+if ($Version) {
+    $publishArgs += "-p:Version=$Version"
+    Write-Host "Building production client v$Version (multi-file) with SimConnect support..." -ForegroundColor Green
+} else {
+    Write-Host "Building production client (multi-file) with SimConnect support..." -ForegroundColor Green
+}
+
+& dotnet @publishArgs
 
 if ($LASTEXITCODE -ne 0) {
     throw "dotnet publish failed with exit code $LASTEXITCODE"
 }
 
-$publishedFiles = @(Get-ChildItem -LiteralPath $outputDirectory -File)
-$executable = Join-Path $outputDirectory "PCareer.Client.exe"
-if ($publishedFiles.Count -ne 1 -or
-    $publishedFiles[0].FullName -ne $executable) {
-    $unexpectedFiles = ($publishedFiles.Name -join ", ")
-    throw "Single-file verification failed. Published files: $unexpectedFiles"
+$executable = Join-Path $outputDirectory "VirtualPilotNetwork.exe"
+if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
+    throw "Publish completed but the executable was not found: $executable"
 }
 
-$sizeMegabytes = [Math]::Round($publishedFiles[0].Length / 1MB, 1)
-Write-Host "Production client built successfully as one file:" -ForegroundColor Green
-Write-Host "$executable ($sizeMegabytes MB)"
+Write-Host "Production client built successfully:" -ForegroundColor Green
+Write-Host $executable

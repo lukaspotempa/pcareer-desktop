@@ -77,7 +77,7 @@ if ($SimConnectDll) {
     }
 }
 
-$executable = Join-Path $outputDirectory "PCareer.Client.exe"
+$executable = Join-Path $outputDirectory "VirtualPilotNetwork.exe"
 if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
     throw "Publish completed but the executable was not found: $executable"
 }
