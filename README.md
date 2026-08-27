@@ -1,98 +1,75 @@
-# PCareer Desktop Client
+# Virtual Pilot Network Desktop
 
-Windows companion application for the PCareer Microsoft Flight Simulator 2024
-career platform. It connects to the user's simulator through the official
-SimConnect SDK, displays live telemetry, checks whether a flight can start, and
-tracks a local flight through takeoff, landing, and completion.
+Windows companion application for the Virtual Pilot Network career platform and
+Microsoft Flight Simulator 2024. It connects to MSFS through SimConnect,
+authenticates through Discord, loads the player's active contract, and reports
+flight telemetry to the Virtual Pilot Network server.
 
-This repository contains only the desktop client. The future FastAPI server and
-Vue web application belong in separate repositories.
+## Features
 
-## Current features
+- Simulator connection and live aircraft telemetry
+- Discord sign-in through the system browser
+- Contract and aircraft validation before departure
+- Local flight lifecycle and rule enforcement
+- Portable, self-updating Windows executable
+- No installer or automatically-created shortcuts
 
-- Detects whether Microsoft Flight Simulator 2024 is available and retries every
-  two seconds while it is closed.
-- Reads aircraft, position, altitude, airspeed, heading, fuel, weight, gear,
-  brakes, slew state, simulation rate, and ground state.
-- Implements the local flight state machine:
-  `Ready -> Started -> Airborne -> Landed -> Finished`.
-- Validates basic start conditions such as on-ground state, 1x simulation rate,
-  slew mode, required aircraft, and optional departure radius.
-- Keeps future server communication behind `IFlightServerClient`.
-- Produces a normal Windows executable with a PowerShell build script.
+## Download
 
-## Repository layout
+Download `VirtualPilotNetwork.exe` from the
+[latest release](https://github.com/lukaspotempa/pcareer-desktop/releases/latest).
+Keep it in a user-writable location so it can replace itself during updates.
 
-```text
-src/PCareer.Client/                WinForms application and SimConnect adapter
-tests/PCareer.Client.LogicTests/   dependency-free flight lifecycle checks
-tests/SimConnect.CompileStub/      compile-only managed API contract
-scripts/build.ps1                  release publisher
-scripts/test.ps1                   local verification
-docs/ARCHITECTURE.md               client design and server boundary
-```
-
-The compile stub is never included in a release. Production builds reference
-Microsoft's SDK assembly directly.
-
-## Prerequisites
-
-- Windows x64
-- .NET 8 SDK or newer
-- Microsoft Flight Simulator 2024 SDK
-
-Install the SDK from MSFS 2024 Developer Mode using **Help -> SDK Installer**.
-The build needs this file:
-
-```text
-<SDK>\SimConnect SDK\lib\managed\Microsoft.FlightSimulator.SimConnect.dll
-```
+Requirements: Windows x64, Microsoft Flight Simulator 2024, and the Microsoft
+Edge WebView2 Runtime.
 
 ## Build
 
-From the repository root:
+Building requires the .NET 8 SDK and the Microsoft Flight Simulator 2024 SDK.
+Run this from the repository root:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build.ps1 `
-  -SimConnectDll "F:\FSSDK\SimConnect SDK\lib\managed\Microsoft.FlightSimulator.SimConnect.dll" `
-  -RequireSimConnect
+.\scripts\build.ps1 `
+  -SimConnectDll "<MSFS SDK>\SimConnect SDK\lib\managed\Microsoft.FlightSimulator.SimConnect.dll" `
+  -RequireSimConnect `
+  -SelfContained
 ```
 
-The release is written to:
+The portable executable is written to
+`dist\PCareer.Client\VirtualPilotNetwork.exe`.
 
-```text
-dist\PCareer.Client\PCareer.Client.exe
-```
-
-Add `-SelfContained` if the target PC does not have the .NET 8 Desktop Runtime.
-The build script copies both required SimConnect DLLs into the release folder.
-
-Without `-RequireSimConnect`, the script can create a UI-only development build
-when the SDK is unavailable. Such a build cannot connect to the simulator.
-
-## Test
+Run all local checks with:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test.ps1
+.\scripts\test.ps1
 ```
 
-This validates the flight lifecycle and compiles the SimConnect-specific source
-without placing the compile stub in `dist`.
+## Release
 
-## Run
+Set a GitHub token with repository `Contents: read and write` permission, then
+publish a version newer than the current release:
 
-1. Start MSFS 2024 and load into a flight.
-2. Run `dist\PCareer.Client\PCareer.Client.exe`.
-3. Wait for the simulator status to become connected.
-4. While on the ground at 1x simulation rate, click **Start flight**.
-5. Take off and land, then click **Finish flight**.
+```powershell
+$env:GITHUB_TOKEN = "<token>"
 
-The bundled development assignment permits any aircraft and airport. Later, the
-server adapter will replace this with authenticated contract assignments and
-batched telemetry uploads.
+.\scripts\release.ps1 `
+  -Version "0.0.3" `
+  -SimConnectDll "<MSFS SDK>\SimConnect SDK\lib\managed\Microsoft.FlightSimulator.SimConnect.dll"
+```
+
+The release contains the user-facing executable and a small checksum manifest
+used by the automatic updater. The repository and release assets must remain
+publicly accessible for unauthenticated update checks.
+
+## Security
+
+Please report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
+Never include access tokens, credentials, or private user data in a public issue.
 
 ## License
 
-No open-source license has been selected yet. Add a `LICENSE` file before making
-the repository public if you want others to have explicit reuse rights.
+Copyright © 2026 Lukas Potempa. All rights reserved.
 
+This source is publicly visible for review, but it is not open-source software.
+Copying, modification, redistribution, sublicensing, and commercial use are not
+permitted without prior written authorization. See [LICENSE](LICENSE).

@@ -77,6 +77,9 @@ if ($SimConnectDll) {
     }
 }
 
+Get-ChildItem -Path $outputDirectory -Filter "*.xml" -File | Remove-Item -Force
+Get-ChildItem -Path $outputDirectory -Filter "*.pdb" -File | Remove-Item -Force
+
 $executable = Join-Path $outputDirectory "VirtualPilotNetwork.exe"
 if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
     throw "Publish completed but the executable was not found: $executable"

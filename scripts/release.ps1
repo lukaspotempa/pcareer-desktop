@@ -3,7 +3,8 @@ param(
     [string]$Version,
 
     [string]$SimConnectDll = "",
-    [string]$GitHubToken = ""
+    [string]$GitHubToken = "",
+    [switch]$Manual
 )
 
 $ErrorActionPreference = "Stop"
@@ -42,25 +43,31 @@ New-Item -ItemType Directory -Path $vpkOutput -Force | Out-Null
 Write-Host "Packing release with Velopack v$Version..." -ForegroundColor Cyan
 $exePath = Join-Path $prodDir "VirtualPilotNetwork.exe"
 & $vpk pack `
-    --name "VirtualPilotNetwork" `
-    --version $Version `
+    --packId "VirtualPilotNetwork" `
+    --packVersion $Version `
     --packDir $prodDir `
     --mainExe "VirtualPilotNetwork.exe" `
-    --outputDir $vpkOutput `
-    --allowDirty
+    --outputDir $vpkOutput
 if ($LASTEXITCODE -ne 0) {
     throw "vpk pack failed"
 }
 
 # 4. Upload to GitHub Releases
-if ($token) {
+if ($Manual) {
+    Write-Host ""
+    Write-Host "Release files packed to: $vpkOutput" -ForegroundColor Green
+    Write-Host "Upload them manually to GitHub Releases:" -ForegroundColor Yellow
+    Write-Host "  1. Go to https://github.com/AnomalyCo/pcareer-desktop/releases/new"
+    Write-Host "  2. Create tag: v$Version"
+    Write-Host "  3. Upload all files from: $vpkOutput"
+    Write-Host "  4. Publish the release"
+} elseif ($token) {
     Write-Host "Uploading v$Version to GitHub Releases..." -ForegroundColor Cyan
     & $vpk upload github `
-        --tagName "v$Version" `
-        --name "v$Version" `
+        --tag "v$Version" `
         --repoUrl "https://github.com/AnomalyCo/pcareer-desktop" `
         --token $token `
-        --releaseDir $vpkOutput
+        --outputDir $vpkOutput
     if ($LASTEXITCODE -ne 0) {
         throw "vpk upload github failed"
     }
@@ -69,7 +76,7 @@ if ($token) {
     Write-Warning "No GitHub token provided. Skipping upload."
     Write-Warning "Set VPNET_GITHUB_TOKEN or GITHUB_TOKEN, or pass -GitHubToken."
     Write-Host "To upload manually:"
-    Write-Host "  vpk upload github --tagName v$Version --repoUrl https://github.com/AnomalyCo/pcareer-desktop --token <TOKEN> --releaseDir $vpkOutput"
+    Write-Host "  vpk upload github --tag v$Version --repoUrl https://github.com/AnomalyCo/pcareer-desktop --token <TOKEN> --outputDir $vpkOutput"
 }
 
 Write-Host "Release v$Version complete." -ForegroundColor Green

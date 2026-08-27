@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Web.WebView2.WinForms;
 using Velopack;
+using Velopack.Exceptions;
 
 namespace PCareer.Client;
 
@@ -86,6 +87,12 @@ public sealed class UpdateForm : Form
                 verCurrent = currentVersion,
                 verNew = latestVersion,
             });
+        }
+        catch (NotInstalledException)
+        {
+            // Not installed via Velopack — updates don't apply. Proceed to login.
+            DialogResult = DialogResult.OK;
+            Close();
         }
         catch (Exception ex)
         {

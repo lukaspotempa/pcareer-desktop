@@ -8,6 +8,7 @@ public sealed class LoginForm : Form
 {
     private readonly PCareerApiClient _api;
     private readonly CancellationTokenSource _cancellation = new();
+    private readonly Panel _card;
 
     private readonly Label _statusLabel;
     private readonly Button _loginButton;
@@ -20,43 +21,21 @@ public sealed class LoginForm : Form
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
-        ClientSize = new Size(440, 400);
+        ClientSize = new Size(440, 440);
         BackColor = Color.FromArgb(11, 14, 18);
         ForeColor = Color.FromArgb(241, 245, 249);
         Font = new Font("Segoe UI", 10);
 
-        var outerLayout = new TableLayoutPanel
+        _card = new Panel
         {
-            Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            RowCount = 3,
-            BackColor = Color.Transparent,
-            Padding = new Padding(0),
-        };
-        outerLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        outerLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        outerLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        outerLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-
-        // Center row holds the card
-        var centerPanel = new Panel
-        {
-            Dock = DockStyle.Fill,
-            BackColor = Color.Transparent,
-        };
-
-        var card = new Panel
-        {
-            Size = new Size(360, 280),
-            Anchor = AnchorStyles.None,
+            Size = new Size(360, 260),
             BackColor = Color.FromArgb(20, 25, 32),
         };
-        card.Paint += (_, e) =>
+        _card.Paint += (_, e) =>
         {
             using var pen = new Pen(Color.FromArgb(20, 255, 255, 255)) { Width = 1 };
             e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-            var rect = new Rectangle(0, 0, card.Width - 1, card.Height - 1);
-            e.Graphics.DrawRectangle(pen, rect);
+            e.Graphics.DrawRectangle(pen, new Rectangle(0, 0, _card.Width - 1, _card.Height - 1));
         };
 
         var cardInner = new TableLayoutPanel
@@ -125,18 +104,10 @@ public sealed class LoginForm : Form
         cardInner.Controls.Add(subtitle, 0, 1);
         cardInner.Controls.Add(_loginButton, 0, 2);
         cardInner.Controls.Add(_statusLabel, 0, 3);
-        card.Controls.Add(cardInner);
-        centerPanel.Controls.Add(card);
-        outerLayout.Controls.Add(centerPanel, 0, 1);
+        _card.Controls.Add(cardInner);
 
-        // Bottom security note
-        var divider = new Panel
-        {
-            Height = 1,
-            Dock = DockStyle.Top,
-            BackColor = Color.FromArgb(17, 255, 255, 255),
-            Margin = new Padding(32, 0, 32, 10),
-        };
+        Controls.Add(_card);
+
         var securityNote = new Label
         {
             Text = "Authentication is handled directly by Discord. Your password is never shared with Virtual Pilot Network.",
@@ -145,28 +116,25 @@ public sealed class LoginForm : Form
             Font = new Font("Segoe UI", 8f),
             ForeColor = Color.FromArgb(100, 116, 139),
             BackColor = Color.Transparent,
-            Dock = DockStyle.Top,
-            Margin = new Padding(0, 0, 0, 8),
         };
-        var bottomPanel = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            RowCount = 2,
-            BackColor = Color.Transparent,
-        };
-        bottomPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        bottomPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        bottomPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        bottomPanel.Controls.Add(divider, 0, 0);
-        bottomPanel.Controls.Add(securityNote, 0, 1);
-        outerLayout.Controls.Add(bottomPanel, 0, 2);
+        Controls.Add(securityNote);
 
-        Controls.Add(outerLayout);
+        Resize += (_, _) => LayoutControls(securityNote);
+        Load += (_, _) => LayoutControls(securityNote);
         FormClosed += (_, _) => _cancellation.Cancel();
     }
 
     public DesktopSession? Session { get; private set; }
+
+    private void LayoutControls(Label securityNote)
+    {
+        _card.Location = new Point(
+            (ClientSize.Width - _card.Width) / 2,
+            (ClientSize.Height - _card.Height) / 2 - 20);
+        securityNote.Location = new Point(
+            (ClientSize.Width - securityNote.PreferredWidth) / 2,
+            ClientSize.Height - securityNote.PreferredHeight - 16);
+    }
 
     private async void LoginClicked(object? sender, EventArgs eventArgs)
     {

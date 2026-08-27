@@ -12,7 +12,14 @@ internal static class Program
     {
         // Velopack bootstrap — must be the very first call.
         // This handles re-launching during apply/update/uninstall hooks.
-        VelopackApp.Build().SetAutoApplyOnStartup(false).Run();
+        try
+        {
+            VelopackApp.Build().SetAutoApplyOnStartup(false).Run();
+        }
+        catch
+        {
+            // Not installed via Velopack (standalone exe / dev build) — skip bootstrap.
+        }
 
         ApplicationConfiguration.Initialize();
 
@@ -101,8 +108,12 @@ internal static class Program
         }
         catch (NotInstalledException)
         {
-            // Running from IDE / dev build — no Velopack installation found.
-            // Silently skip update check and continue.
+            // Not installed via Velopack (standalone exe / dev build) — skip update check.
+            return null;
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("not installed", StringComparison.OrdinalIgnoreCase))
+        {
+            // Velopack throws this when not properly installed — skip update check.
             return null;
         }
         catch (Exception ex)
