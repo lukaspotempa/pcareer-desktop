@@ -82,6 +82,21 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
         public double LegacyRightAuxCapacity;
         public double LegacyRightMainCapacity;
         public double LegacyRightTipCapacity;
+        public double PayloadStation1WeightPounds;
+        public double PayloadStation2WeightPounds;
+        public double PayloadStation3WeightPounds;
+        public double PayloadStation4WeightPounds;
+        public double PayloadStation5WeightPounds;
+        public double PayloadStation6WeightPounds;
+        public double PayloadStation7WeightPounds;
+        public double PayloadStation8WeightPounds;
+        public double PayloadStation9WeightPounds;
+        public double PayloadStation10WeightPounds;
+        public double PayloadStation11WeightPounds;
+        public double PayloadStation12WeightPounds;
+        public double PayloadStation13WeightPounds;
+        public double PayloadStation14WeightPounds;
+        public double PayloadStation15WeightPounds;
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi, Pack = 1)]
@@ -293,6 +308,14 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
         foreach (var variable in legacyFuelCapacityVariables)
         {
             AddFloat64(connection, DataDefinition.UserAircraft, variable, "gallons");
+        }
+        for (var station = 1; station <= 15; station++)
+        {
+            AddFloat64(
+                connection,
+                DataDefinition.UserAircraft,
+                $"PAYLOAD STATION WEIGHT:{station}",
+                "pounds");
         }
 
         connection.RegisterDataDefineStruct<UserAircraftData>(DataDefinition.UserAircraft);
@@ -635,6 +658,27 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
             sample.LegacyRightTipCapacity,
         ];
         legacyCapacities.CopyTo(_legacyFuelTankCapacities, 0);
+        double[] payloadStationWeights =
+        [
+            sample.PayloadStation1WeightPounds,
+            sample.PayloadStation2WeightPounds,
+            sample.PayloadStation3WeightPounds,
+            sample.PayloadStation4WeightPounds,
+            sample.PayloadStation5WeightPounds,
+            sample.PayloadStation6WeightPounds,
+            sample.PayloadStation7WeightPounds,
+            sample.PayloadStation8WeightPounds,
+            sample.PayloadStation9WeightPounds,
+            sample.PayloadStation10WeightPounds,
+            sample.PayloadStation11WeightPounds,
+            sample.PayloadStation12WeightPounds,
+            sample.PayloadStation13WeightPounds,
+            sample.PayloadStation14WeightPounds,
+            sample.PayloadStation15WeightPounds,
+        ];
+        var payloadStationWeightPounds = payloadStationWeights
+            .Take(Math.Clamp(sample.PayloadStationCount, 0, payloadStationWeights.Length))
+            .Sum();
 
         TelemetryReceived?.Invoke(
             this,
@@ -661,7 +705,8 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
                 EmptyWeightPounds: sample.EmptyWeightPounds,
                 EngineCount: sample.EngineCount,
                 GearPositionPercent: sample.GearPositionPercent,
-                ParkingBrakeSet: sample.ParkingBrakeSet != 0));
+                ParkingBrakeSet: sample.ParkingBrakeSet != 0,
+                PayloadStationWeightPounds: payloadStationWeightPounds));
     }
 
     private void PublishIdentity(AircraftIdentityData sample)

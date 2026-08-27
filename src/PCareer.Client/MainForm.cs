@@ -125,6 +125,11 @@ public sealed class MainForm : Form
             case "loadFuel":
                 LoadFuelClicked();
                 break;
+#if DEBUG
+            case "transmitAircraft":
+                TransmitAircraftClicked(this, EventArgs.Empty);
+                break;
+#endif
         }
     }
 
@@ -177,6 +182,21 @@ public sealed class MainForm : Form
             fuelButtonText = _contract?.RequiredFuelKg is double fuel
                 ? $"Load fuel  ·  {fuel:0} kg"
                 : "Load fuel  ·  no target",
+#if DEBUG
+            developmentMode = true,
+            transmitAircraftEnabled = _transmitButton.Enabled,
+            position = _positionLabel.Text,
+            altitude = _altitudeLabel.Text,
+            speed = _speedLabel.Text,
+            verticalSpeed = _verticalSpeedLabel.Text,
+            heading = _headingLabel.Text,
+            ground = _groundLabel.Text,
+            attitude = _attitudeLabel.Text,
+            systems = _systemsLabel.Text,
+            telemetryServer = _telemetryServerLabel.Text,
+#else
+            developmentMode = false,
+#endif
         };
 
         _web.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(state));
@@ -259,6 +279,21 @@ public sealed class MainForm : Form
         _aircraftLabel.Text = string.IsNullOrWhiteSpace(telemetry.AircraftAtcModel)
             ? telemetry.AircraftTitle
             : $"{telemetry.AircraftTitle}  »  ATC {telemetry.AircraftAtcType} {telemetry.AircraftAtcModel}";
+
+#if DEBUG
+        _positionLabel.Text = $"{telemetry.LatitudeDegrees:0.00000}, {telemetry.LongitudeDegrees:0.00000}";
+        _altitudeLabel.Text = $"{telemetry.AltitudeFeet:0} ft MSL  ·  {telemetry.AltitudeAglFeet:0} ft AGL";
+        _speedLabel.Text = $"{telemetry.IndicatedAirspeedKnots:0} KIAS  ·  {telemetry.GroundSpeedKnots:0} kt ground";
+        _verticalSpeedLabel.Text = $"{telemetry.VerticalSpeedFeetPerMinute:+0;-0;0} ft/min";
+        _headingLabel.Text = $"{telemetry.HeadingTrueDegrees:000}° true";
+        _groundLabel.Text = telemetry.OnGround ? "On ground" : "Airborne";
+        _attitudeLabel.Text = $"Pitch {telemetry.PitchDegrees:+0.0;-0.0;0.0}°  ·  Bank {telemetry.BankDegrees:+0.0;-0.0;0.0}°";
+        _systemsLabel.Text =
+            $"Fuel {telemetry.FuelTotalKg:0} kg  ·  Payload {telemetry.PayloadWeightKg:0} kg  ·  "
+            + $"Weight {telemetry.TotalWeightPounds:0} lb  ·  Engines {telemetry.EngineCount}  ·  "
+            + $"Gear {telemetry.GearPositionPercent:0}%  ·  Parking brake {(telemetry.ParkingBrakeSet ? "ON" : "off")}  ·  "
+            + $"Sim {telemetry.SimulationRate:0.##}×  ·  Slew {(telemetry.SlewActive ? "ON" : "off")}";
+#endif
 
         _flightStatusLabel.Text = FlightStatusText();
         _finishButton.Enabled = _flight.CanFinish;
@@ -455,6 +490,7 @@ public sealed class MainForm : Form
         try
         {
             _transmitButton.Enabled = false;
+            SendStateToJS();
             _simulator.RequestAircraftIdentity();
         }
         catch (Exception exception)
@@ -466,6 +502,7 @@ public sealed class MainForm : Form
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Error);
             _transmitButton.Enabled = _simulator.IsConnected;
+            SendStateToJS();
         }
     }
 
@@ -496,6 +533,7 @@ public sealed class MainForm : Form
         finally
         {
             _transmitButton.Enabled = _simulator.IsConnected;
+            SendStateToJS();
         }
     }
 

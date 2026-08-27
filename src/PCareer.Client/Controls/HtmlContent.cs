@@ -83,6 +83,9 @@ body{padding:24px 28px 20px;display:flex;flex-direction:column;gap:16px;overflow
 .btn.secondary:hover{background:rgba(255,255,255,0.075);border-color:rgba(255,255,255,0.13)}
 .btn.secondary:disabled{background:rgba(255,255,255,0.025);border-color:var(--border);
   color:var(--text5);cursor:not-allowed}
+.development{display:none;border-color:rgba(251,191,36,0.22)}
+.development-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+.development .btn{width:100%;margin-top:16px}
 
 /* ── mini button (refresh) ── */
 .btn-mini{display:inline-flex;align-items:center;gap:5px;border-radius:var(--radius-xs);
@@ -158,6 +161,24 @@ body{padding:24px 28px 20px;display:flex;flex-direction:column;gap:16px;overflow
   <button class="btn primary" id="finishBtn" disabled onclick="post({action:'finishFlight'})">Finish flight</button>
 </div>
 
+<!-- shown only when compiled with the Debug configuration -->
+<div class="panel development" id="developmentPanel">
+  <div class="field-label" style="color:var(--amber)">Development telemetry</div>
+  <div class="development-grid">
+    <div><div class="field-label">Position</div><div class="field-value" id="position">--</div></div>
+    <div><div class="field-label">Altitude</div><div class="field-value" id="altitude">--</div></div>
+    <div><div class="field-label">Airspeed</div><div class="field-value" id="speed">--</div></div>
+    <div><div class="field-label">Vertical speed</div><div class="field-value" id="verticalSpeed">--</div></div>
+    <div><div class="field-label">Heading</div><div class="field-value" id="heading">--</div></div>
+    <div><div class="field-label">Flight status</div><div class="field-value" id="ground">--</div></div>
+    <div><div class="field-label">Pitch / bank</div><div class="field-value" id="attitude">--</div></div>
+    <div><div class="field-label">Aircraft systems</div><div class="field-value" id="systems">--</div></div>
+    <div><div class="field-label">Server telemetry</div><div class="field-value" id="telemetryServer">--</div></div>
+  </div>
+  <button class="btn secondary" id="transmitAircraftBtn" disabled
+    onclick="post({action:'transmitAircraft'})">Send aircraft to server</button>
+</div>
+
 <div class="footer">Virtual Pilot Network</div>
 
 <script>
@@ -191,6 +212,21 @@ window.chrome?.webview?.addEventListener('message',function(e){
   fuel.disabled=!s.loadFuelEnabled;
   pb.textContent=s.payloadButtonText||'Load payload';
   fuel.textContent=s.fuelButtonText||'Load fuel';
+
+  var developmentPanel=document.getElementById('developmentPanel');
+  developmentPanel.style.display=s.developmentMode?'block':'none';
+  if(s.developmentMode){
+    setText('position',s.position||'--');
+    setText('altitude',s.altitude||'--');
+    setText('speed',s.speed||'--');
+    setText('verticalSpeed',s.verticalSpeed||'--');
+    setText('heading',s.heading||'--');
+    setText('ground',s.ground||'--');
+    setText('attitude',s.attitude||'--');
+    setText('systems',s.systems||'--');
+    setText('telemetryServer',s.telemetryServer||'--');
+    document.getElementById('transmitAircraftBtn').disabled=!s.transmitAircraftEnabled;
+  }
 });
 
 function setText(id,t){var e=document.getElementById(id);if(e)e.textContent=t}

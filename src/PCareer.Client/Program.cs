@@ -4,6 +4,8 @@ namespace PCareer.Client;
 
 internal static class Program
 {
+    internal const string ProductionServerUrl = "https://career.virtual-pilot.com/";
+
     [STAThread]
     private static int Main(string[] args)
     {
@@ -52,8 +54,14 @@ internal static class Program
             return 1;
         }
 
-        var serverUrl = Environment.GetEnvironmentVariable("PCAREER_SERVER_URL")
-            ?? "https://career.virtual-pilot.com/";
+        var serverUrl = SelectServerUrl(
+            Environment.GetEnvironmentVariable("PCAREER_SERVER_URL"),
+#if DEBUG
+            allowDevelopmentOverride: true
+#else
+            allowDevelopmentOverride: false
+#endif
+        );
         if (!Uri.TryCreate(serverUrl, UriKind.Absolute, out var serverUri))
         {
             MessageBox.Show(
@@ -73,6 +81,15 @@ internal static class Program
 
         Application.Run(new MainForm(api, login.Session));
         return 0;
+    }
+
+    internal static string SelectServerUrl(
+        string? configuredUrl,
+        bool allowDevelopmentOverride)
+    {
+        return allowDevelopmentOverride && !string.IsNullOrWhiteSpace(configuredUrl)
+            ? configuredUrl
+            : ProductionServerUrl;
     }
 
     /// <summary>

@@ -23,11 +23,14 @@ public sealed record TelemetrySnapshot(
     double EmptyWeightPounds,
     int EngineCount,
     double GearPositionPercent,
-    bool ParkingBrakeSet)
+    bool ParkingBrakeSet,
+    double PayloadStationWeightPounds = double.NaN)
 {
     private const double KilogramsPerPound = 0.45359237;
 
     public double PayloadWeightKg => Math.Max(
         0,
-        (TotalWeightPounds - EmptyWeightPounds) * KilogramsPerPound - FuelTotalKg);
+        double.IsFinite(PayloadStationWeightPounds)
+            ? PayloadStationWeightPounds * KilogramsPerPound
+            : (TotalWeightPounds - EmptyWeightPounds) * KilogramsPerPound - FuelTotalKg);
 }

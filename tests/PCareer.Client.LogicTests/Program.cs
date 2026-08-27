@@ -3,6 +3,23 @@ using PCareer.Client.Models;
 using PCareer.Client.Services;
 
 Assert(
+    PCareer.Client.Program.SelectServerUrl(
+        "http://localhost:8000/",
+        allowDevelopmentOverride: false)
+        == PCareer.Client.Program.ProductionServerUrl,
+    "Production builds must ignore a development server environment override.");
+Assert(
+    PCareer.Client.Program.SelectServerUrl(
+        "http://localhost:8000/",
+        allowDevelopmentOverride: true)
+        == "http://localhost:8000/",
+    "Development builds should allow an explicit local server override.");
+Assert(
+    PCareer.Client.Program.SelectServerUrl(" ", allowDevelopmentOverride: true)
+        == PCareer.Client.Program.ProductionServerUrl,
+    "An empty development override should fall back to the production server.");
+
+Assert(
     PortableUpdater.ParseVersion("v1.2.3") == new Version(1, 2, 3),
     "Portable update versions should accept the release tag format.");
 var validManifest = new PortableUpdateManifest(
@@ -203,6 +220,28 @@ Assert(
     jumped?.Contains("position changed discontinuously") == true,
     "Reloading at another location must cancel the active flight.");
 
+var payloadTelemetry = Sample(onGround: true, altitudeAgl: 5);
+var payloadController = new FlightSessionController();
+payloadController.BeginLoading();
+payloadController.Start(Guid.NewGuid(), payloadTelemetry);
+var asynchronousWeightSample = payloadTelemetry with
+{
+    ObservedAt = payloadTelemetry.ObservedAt.AddSeconds(1),
+    FuelTotalKg = payloadTelemetry.FuelTotalKg - 20,
+    TotalWeightPounds = payloadTelemetry.TotalWeightPounds - 10,
+};
+Assert(
+    payloadController.Observe(asynchronousWeightSample) is null,
+    "Normal fuel burn must not look like a payload change when weight values update asynchronously.");
+var changedPayloadSample = asynchronousWeightSample with
+{
+    ObservedAt = asynchronousWeightSample.ObservedAt.AddSeconds(1),
+    PayloadStationWeightPounds = asynchronousWeightSample.PayloadStationWeightPounds + 20,
+};
+Assert(
+    payloadController.Observe(changedPayloadSample)?.Contains("payload changed") == true,
+    "A real payload-station weight change must still cancel an active flight.");
+
 Console.WriteLine("VPN desktop flight lifecycle checks passed.");
 return;
 
@@ -234,7 +273,8 @@ static TelemetrySnapshot Sample(
     EmptyWeightPounds: 1663,
     EngineCount: 1,
     GearPositionPercent: 100,
-    ParkingBrakeSet: onGround);
+    ParkingBrakeSet: onGround,
+    PayloadStationWeightPounds: (2300d - 1663d) - 108.9d / 0.45359237d);
 
 static void Assert(bool condition, string message)
 {
