@@ -62,6 +62,10 @@ $publishArgs = @(
     "--output", $outputDirectory,
     "-p:SimConnectAssemblyPath=$SimConnectDll",
     "-p:SimConnectNativePath=$nativeSimConnectDll",
+    "-p:PublishSingleFile=true",
+    "-p:IncludeNativeLibrariesForSelfExtract=true",
+    "-p:IncludeAllContentForSelfExtract=true",
+    "-p:EnableCompressionInSingleFile=true",
     "-p:PublishTrimmed=false",
     "-p:DebugSymbols=false",
     "-p:DebugType=None"
@@ -69,9 +73,9 @@ $publishArgs = @(
 
 if ($Version) {
     $publishArgs += "-p:Version=$Version"
-    Write-Host "Building production client v$Version (multi-file) with SimConnect support..." -ForegroundColor Green
+    Write-Host "Building single-file production client v$Version with SimConnect support..." -ForegroundColor Green
 } else {
-    Write-Host "Building production client (multi-file) with SimConnect support..." -ForegroundColor Green
+    Write-Host "Building single-file production client with SimConnect support..." -ForegroundColor Green
 }
 
 & dotnet @publishArgs
@@ -81,9 +85,13 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $executable = Join-Path $outputDirectory "VirtualPilotNetwork.exe"
-if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
-    throw "Publish completed but the executable was not found: $executable"
+$publishedFiles = @(Get-ChildItem -LiteralPath $outputDirectory -File -Recurse)
+if ($publishedFiles.Count -ne 1 -or
+    $publishedFiles[0].FullName -ne $executable) {
+    $unexpectedFiles = ($publishedFiles.FullName -join ", ")
+    throw "Single-file verification failed. Published files: $unexpectedFiles"
 }
 
-Write-Host "Production client built successfully:" -ForegroundColor Green
-Write-Host $executable
+$sizeMegabytes = [Math]::Round($publishedFiles[0].Length / 1MB, 1)
+Write-Host "Production client built successfully as one file:" -ForegroundColor Green
+Write-Host "$executable ($sizeMegabytes MB)"

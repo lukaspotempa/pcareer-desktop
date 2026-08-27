@@ -75,7 +75,8 @@ public sealed class MainForm : Form
         base.OnShown(e);
         try
         {
-            await _web.EnsureCoreWebView2Async();
+            var environment = await WebViewRuntime.CreateEnvironmentAsync();
+            await _web.EnsureCoreWebView2Async(environment);
             _web.CoreWebView2.NavigateToString(HtmlContent.Template);
         }
         catch (Exception ex)

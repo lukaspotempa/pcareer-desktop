@@ -1,5 +1,33 @@
+using PCareer.Client;
 using PCareer.Client.Models;
 using PCareer.Client.Services;
+
+Assert(
+    PortableUpdater.ParseVersion("v1.2.3") == new Version(1, 2, 3),
+    "Portable update versions should accept the release tag format.");
+var validManifest = new PortableUpdateManifest(
+    "1.2.3",
+    "https://github.com/lukaspotempa/pcareer-desktop/releases/download/v1.2.3/VirtualPilotNetwork.exe",
+    new string('a', 64),
+    1024);
+validManifest.Validate();
+Assert(
+    validManifest.ParsedVersion > new Version(1, 2, 2),
+    "A newer portable release should compare above the installed version.");
+AssertThrows<InvalidDataException>(
+    () => new PortableUpdateManifest(
+        "1.2.3",
+        "http://example.com/VirtualPilotNetwork.exe",
+        new string('a', 64),
+        1024).Validate(),
+    "Portable updates must reject non-HTTPS downloads.");
+AssertThrows<InvalidDataException>(
+    () => new PortableUpdateManifest(
+        "1.2.3",
+        "https://example.com/VirtualPilotNetwork.exe",
+        "not-a-hash",
+        1024).Validate(),
+    "Portable updates must reject invalid checksums.");
 
 var controller = new FlightSessionController();
 var contract = ContractAssignment.DevelopmentFlight;
@@ -130,4 +158,19 @@ static void Assert(bool condition, string message)
     {
         throw new InvalidOperationException(message);
     }
+}
+
+static void AssertThrows<TException>(Action action, string message)
+    where TException : Exception
+{
+    try
+    {
+        action();
+    }
+    catch (TException)
+    {
+        return;
+    }
+
+    throw new InvalidOperationException(message);
 }

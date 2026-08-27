@@ -122,7 +122,7 @@ body{display:flex;align-items:center;justify-content:center;padding:24px}
     <div class="subtitle" id="errorText">Could not check for updates.</div>
     <div class="btn-row">
       <button class="btn primary" onclick="post({action:'retry'})">Retry</button>
-      <button class="btn ghost" onclick="post({action:'quit'})">Quit</button>
+      <button class="btn ghost" onclick="post({action:'continue'})">Continue offline</button>
     </div>
   </div>
 </div>

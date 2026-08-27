@@ -5,9 +5,15 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$projectRoot = Split-Path -Parent $PSScriptRoot
+$projectRoot = [System.IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
 $projectFile = Join-Path $projectRoot "src\PCareer.Client\PCareer.Client.csproj"
-$outputDirectory = Join-Path $projectRoot "dist\PCareer.Client"
+$outputDirectory = [System.IO.Path]::GetFullPath((Join-Path $projectRoot "dist\PCareer.Client"))
+
+if (-not $outputDirectory.StartsWith(
+    $projectRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar,
+    [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "Refusing to clean an output directory outside the repository: $outputDirectory"
+}
 
 if (-not $SimConnectDll -and $env:MSFS2024_SDK) {
     $SimConnectDll = Join-Path $env:MSFS2024_SDK "SimConnect SDK\lib\managed\Microsoft.FlightSimulator.SimConnect.dll"
@@ -51,11 +57,30 @@ $publishArguments = @(
     "--configuration", "Release",
     "--runtime", "win-x64",
     "--self-contained", $selfContainedValue,
-    "--output", $outputDirectory
+    "--output", $outputDirectory,
+    "-p:PublishSingleFile=true",
+    "-p:IncludeNativeLibrariesForSelfExtract=true",
+    "-p:IncludeAllContentForSelfExtract=true",
+    "-p:EnableCompressionInSingleFile=true",
+    "-p:PublishTrimmed=false"
 )
 
 if ($SimConnectDll) {
     $publishArguments += "-p:SimConnectAssemblyPath=$SimConnectDll"
+    $nativeDll = Join-Path (Split-Path -Parent (Split-Path -Parent $SimConnectDll)) "SimConnect.dll"
+    if (Test-Path -LiteralPath $nativeDll -PathType Leaf) {
+        $publishArguments += "-p:SimConnectNativePath=$nativeDll"
+    }
+    elseif ($RequireSimConnect) {
+        throw "Native SimConnect runtime not found at: $nativeDll"
+    }
+    else {
+        Write-Warning "Native SimConnect.dll was not found. The SDK/GAC runtime must be installed on the target PC."
+    }
+}
+
+if (Test-Path -LiteralPath $outputDirectory) {
+    Remove-Item -LiteralPath $outputDirectory -Recurse -Force
 }
 
 & dotnet @publishArguments
@@ -63,26 +88,14 @@ if ($LASTEXITCODE -ne 0) {
     throw "dotnet publish failed with exit code $LASTEXITCODE"
 }
 
-if ($SimConnectDll) {
-    Copy-Item -LiteralPath $SimConnectDll -Destination (Join-Path $outputDirectory "Microsoft.FlightSimulator.SimConnect.dll") -Force
-    Write-Host "Copied managed SimConnect assembly." -ForegroundColor Green
-
-    $nativeDll = Join-Path (Split-Path -Parent (Split-Path -Parent $SimConnectDll)) "SimConnect.dll"
-    if (Test-Path -LiteralPath $nativeDll -PathType Leaf) {
-        Copy-Item -LiteralPath $nativeDll -Destination (Join-Path $outputDirectory "SimConnect.dll") -Force
-        Write-Host "Copied native SimConnect runtime." -ForegroundColor Green
-    }
-    else {
-        Write-Warning "Native SimConnect.dll was not found beside the SDK libraries. The SDK/GAC runtime must be installed on the target PC."
-    }
-}
-
 Get-ChildItem -Path $outputDirectory -Filter "*.xml" -File | Remove-Item -Force
 Get-ChildItem -Path $outputDirectory -Filter "*.pdb" -File | Remove-Item -Force
 
 $executable = Join-Path $outputDirectory "VirtualPilotNetwork.exe"
-if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
-    throw "Publish completed but the executable was not found: $executable"
+$publishedFiles = @(Get-ChildItem -LiteralPath $outputDirectory -File -Recurse)
+if ($publishedFiles.Count -ne 1 -or $publishedFiles[0].FullName -ne $executable) {
+    $unexpectedFiles = ($publishedFiles.FullName -join ", ")
+    throw "Single-file verification failed. Published files: $unexpectedFiles"
 }
 
 Write-Host "Desktop client built successfully:" -ForegroundColor Green

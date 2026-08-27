@@ -1,19 +1,17 @@
 using System.Text.Json;
 using Microsoft.Web.WebView2.WinForms;
-using Velopack;
-using Velopack.Exceptions;
 
 namespace PCareer.Client;
 
 public sealed class UpdateForm : Form
 {
     private readonly WebView2 _web = new() { Dock = DockStyle.Fill };
-    private readonly UpdateManager _updateManager;
-    private UpdateInfo? _pendingUpdate;
+    private readonly PortableUpdateClient _updateClient;
+    private PortableUpdateManifest? _pendingUpdate;
 
-    public UpdateForm(UpdateManager updateManager)
+    internal UpdateForm(PortableUpdateClient updateClient)
     {
-        _updateManager = updateManager;
+        _updateClient = updateClient;
         Text = "Virtual Pilot Network";
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -31,7 +29,8 @@ public sealed class UpdateForm : Form
         base.OnShown(e);
         try
         {
-            await _web.EnsureCoreWebView2Async();
+            var environment = await WebViewRuntime.CreateEnvironmentAsync();
+            await _web.EnsureCoreWebView2Async(environment);
             _web.CoreWebView2.NavigateToString(UpdateHtmlContent.Template);
             // Small delay to let the HTML render before we start the check
             await Task.Delay(300);
@@ -55,10 +54,15 @@ public sealed class UpdateForm : Form
                 _ = DownloadAndApplyAsync();
                 break;
             case "quit":
-                Application.Exit();
+                DialogResult = DialogResult.Cancel;
+                Close();
                 break;
             case "retry":
                 _ = CheckForUpdatesAsync();
+                break;
+            case "continue":
+                DialogResult = DialogResult.OK;
+                Close();
                 break;
         }
     }
@@ -68,7 +72,7 @@ public sealed class UpdateForm : Form
         SendToJs(new { show = "stateChecking" });
         try
         {
-            var newVersion = await _updateManager.CheckForUpdatesAsync();
+            var newVersion = await _updateClient.CheckForUpdateAsync();
             if (newVersion is null)
             {
                 SendToJs(new { show = "stateCurrent" });
@@ -79,20 +83,14 @@ public sealed class UpdateForm : Form
             }
 
             _pendingUpdate = newVersion;
-            var currentVersion = _updateManager.CurrentVersion?.ToString() ?? "1.0.0";
-            var latestVersion = newVersion.TargetFullRelease.Version.ToString();
+            var currentVersion = _updateClient.CurrentVersion.ToString(3);
+            var latestVersion = newVersion.ParsedVersion.ToString(3);
             SendToJs(new
             {
                 show = "stateUpdate",
                 verCurrent = currentVersion,
                 verNew = latestVersion,
             });
-        }
-        catch (NotInstalledException)
-        {
-            // Not installed via Velopack — updates don't apply. Proceed to login.
-            DialogResult = DialogResult.OK;
-            Close();
         }
         catch (Exception ex)
         {
@@ -107,11 +105,11 @@ public sealed class UpdateForm : Form
         SendToJs(new { disableUpdate = true });
         try
         {
-            await _updateManager.DownloadUpdatesAsync(_pendingUpdate, progress =>
-            {
-                SendToJs(new { progress });
-            });
-            _updateManager.ApplyUpdatesAndRestart(_pendingUpdate);
+            var progress = new Progress<int>(value => SendToJs(new { progress = value }));
+            var executable = await _updateClient.DownloadAsync(_pendingUpdate, progress);
+            PortableUpdater.BeginApply(executable, _pendingUpdate.NormalizedSha256);
+            DialogResult = DialogResult.Abort;
+            Close();
         }
         catch (Exception ex)
         {

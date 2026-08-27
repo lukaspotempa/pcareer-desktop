@@ -1,7 +1,4 @@
 using PCareer.Client.Services;
-using Velopack;
-using Velopack.Exceptions;
-using Velopack.Sources;
 
 namespace PCareer.Client;
 
@@ -10,17 +7,12 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
-        // Velopack bootstrap — must be the very first call.
-        // This handles re-launching during apply/update/uninstall hooks.
-        try
+        if (PortableUpdater.TryApplyPendingUpdate(args, out var updateExitCode))
         {
-            VelopackApp.Build().SetAutoApplyOnStartup(false).Run();
-        }
-        catch
-        {
-            // Not installed via Velopack (standalone exe / dev build) — skip bootstrap.
+            return updateExitCode;
         }
 
+        PortableUpdater.CleanupDownloads();
         ApplicationConfiguration.Initialize();
 
         // --startup-check is a CI/test flag, skip everything else
@@ -40,7 +32,7 @@ internal static class Program
                 : 0;
         }
 
-        // --skip-update-check lets dev builds bypass Velopack
+        // --skip-update-check bypasses the portable update check when testing a release build.
         var skipUpdate = args.Contains("--skip-update-check", StringComparer.OrdinalIgnoreCase);
 
         if (!skipUpdate)
@@ -84,20 +76,26 @@ internal static class Program
     }
 
     /// <summary>
-    /// Checks for updates via Velopack + GitHub Releases.
+    /// Checks the portable release manifest published with the latest GitHub release.
     /// Returns null to continue, or an exit code to stop.
     /// </summary>
     private static int? RunUpdateCheck()
     {
-        var updateUrl = Environment.GetEnvironmentVariable("PCAREER_UPDATE_URL")
-            ?? "https://github.com/AnomalyCo/opencode"; // placeholder — set your repo URL
+#if !SINGLE_FILE_PUBLISH
+        return null;
+#else
+        var manifestUrl = Environment.GetEnvironmentVariable("PCAREER_UPDATE_MANIFEST_URL")
+            ?? "https://github.com/lukaspotempa/pcareer-desktop/releases/latest/download/VirtualPilotNetwork-update.json";
 
         try
         {
-            var source = new GithubSource(updateUrl, null, false);
-            var mgr = new UpdateManager(source);
+            if (!Uri.TryCreate(manifestUrl, UriKind.Absolute, out var manifestUri))
+            {
+                throw new InvalidOperationException("PCAREER_UPDATE_MANIFEST_URL is not a valid absolute URL.");
+            }
 
-            using var updateForm = new UpdateForm(mgr);
+            var client = new PortableUpdateClient(manifestUri);
+            using var updateForm = new UpdateForm(client);
             var result = updateForm.ShowDialog();
 
             if (result == DialogResult.OK)
@@ -105,16 +103,6 @@ internal static class Program
 
             // User clicked Quit or closed the window
             return 0;
-        }
-        catch (NotInstalledException)
-        {
-            // Not installed via Velopack (standalone exe / dev build) — skip update check.
-            return null;
-        }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("not installed", StringComparison.OrdinalIgnoreCase))
-        {
-            // Velopack throws this when not properly installed — skip update check.
-            return null;
         }
         catch (Exception ex)
         {
@@ -125,5 +113,6 @@ internal static class Program
                 MessageBoxIcon.Warning);
             return retry == DialogResult.Retry ? RunUpdateCheck() : null;
         }
+#endif
     }
 }
