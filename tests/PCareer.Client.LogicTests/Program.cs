@@ -183,6 +183,31 @@ Assert(controller.Phase == FlightPhase.Loading, "Start must first enter the load
 Assert(
     !controller.LoadingStatus(contract, onGround).Contains("±", StringComparison.Ordinal),
     "Player-facing readiness text must not reveal the load tolerance.");
+var toleranceContract = contract with
+{
+    RequiredFuelKg = 100,
+    RequiredPayloadKg = 200,
+};
+Assert(
+    controller.LoadsMatch(
+        toleranceContract,
+        onGround with
+        {
+            FuelTotalKg = toleranceContract.RequiredFuelKg!.Value * 0.971,
+            PayloadStationWeightPounds =
+                toleranceContract.RequiredPayloadKg * 1.029 / 0.45359237,
+        }),
+    "Fuel and payload deviations within three percent must be accepted.");
+Assert(
+    !controller.LoadsMatch(
+        toleranceContract,
+        onGround with
+        {
+            FuelTotalKg = toleranceContract.RequiredFuelKg!.Value * 0.969,
+            PayloadStationWeightPounds =
+                toleranceContract.RequiredPayloadKg / 0.45359237,
+        }),
+    "A load deviation above three percent must still be rejected.");
 controller.Start(Guid.NewGuid(), onGround);
 Assert(controller.Phase == FlightPhase.Started, "Start must enter Started.");
 

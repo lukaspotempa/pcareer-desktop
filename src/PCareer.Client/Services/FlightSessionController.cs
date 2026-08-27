@@ -277,7 +277,7 @@ public sealed class FlightSessionController
     private static bool WithinOnePercent(double target, double actual) =>
         Math.Abs(actual - target) <= LoadTolerance(target);
 
-    private static double LoadTolerance(double target) => Math.Max(1d, Math.Abs(target) * 0.01d);
+    private static double LoadTolerance(double target) => Math.Max(1d, Math.Abs(target) * 0.03d);
 
     private static double ChangeTolerance(double target) => Math.Max(0.5d, Math.Abs(target) * 0.001d);
 

@@ -49,6 +49,7 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
         public int ParkingBrakeSet;
         public int PayloadStationCount;
         public double FuelTotalCapacityGallons;
+        public double UnusableFuelTotalQuantityGallons;
         public double FuelWeightPerGallonPounds;
         public int NewFuelSystem;
         public double ModernTank1Capacity;
@@ -118,6 +119,8 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
 
     private SimConnect? _simConnect;
     private int _payloadStationCount;
+    private double _fuelTotalCapacityGallons;
+    private double _unusableFuelTotalQuantityGallons;
     private double _fuelWeightPerGallonPounds;
     private bool _usesModernFuelSystem;
     private readonly double[] _modernFuelTankCapacities = new double[20];
@@ -280,6 +283,11 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
         AddInt32(connection, DataDefinition.UserAircraft, "BRAKE PARKING POSITION", "bool");
         AddInt32(connection, DataDefinition.UserAircraft, "PAYLOAD STATION COUNT", "number");
         AddFloat64(connection, DataDefinition.UserAircraft, "FUEL TOTAL CAPACITY", "gallons");
+        AddFloat64(
+            connection,
+            DataDefinition.UserAircraft,
+            "UNUSABLE FUEL TOTAL QUANTITY",
+            "gallons");
         AddFloat64(connection, DataDefinition.UserAircraft, "FUEL WEIGHT PER GALLON", "pounds");
         AddInt32(connection, DataDefinition.UserAircraft, "NEW FUEL SYSTEM", "bool");
         for (var tank = 1; tank <= 20; tank++)
@@ -430,15 +438,25 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
         var capacities = _usesModernFuelSystem
             ? _modernFuelTankCapacities
             : _legacyFuelTankCapacities;
-        var totalCapacityGallons = capacities.Where(capacity => capacity > 0.001d).Sum();
+        var summedTankCapacityGallons = capacities
+            .Where(capacity => capacity > 0.001d)
+            .Sum();
+        var totalCapacityGallons = _fuelTotalCapacityGallons > 0.001d
+            ? _fuelTotalCapacityGallons
+            : summedTankCapacityGallons;
         if (totalCapacityGallons <= 0)
         {
             throw new InvalidOperationException("The loaded aircraft did not expose any writable fuel tanks.");
         }
 
         const double kilogramsPerPound = 0.45359237d;
+        var usableCapacityGallons = _usesModernFuelSystem
+            ? Math.Max(
+                0d,
+                totalCapacityGallons - _unusableFuelTotalQuantityGallons)
+            : totalCapacityGallons;
         var capacityKilograms =
-            totalCapacityGallons * _fuelWeightPerGallonPounds * kilogramsPerPound;
+            usableCapacityGallons * _fuelWeightPerGallonPounds * kilogramsPerPound;
         if (fuelKilograms > capacityKilograms + 1d)
         {
             throw new InvalidOperationException(
@@ -632,6 +650,8 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
         _aircraftAtcModel = SimulatorAircraftIdentity.DecodeAtcModel(sample.AircraftAtcModel);
         _aircraftAtcType = SimulatorAircraftIdentity.DecodeAtcType(sample.AircraftAtcType);
         _payloadStationCount = sample.PayloadStationCount;
+        _fuelTotalCapacityGallons = sample.FuelTotalCapacityGallons;
+        _unusableFuelTotalQuantityGallons = sample.UnusableFuelTotalQuantityGallons;
         _fuelWeightPerGallonPounds = sample.FuelWeightPerGallonPounds;
         _usesModernFuelSystem = sample.NewFuelSystem != 0;
         double[] modernCapacities =
@@ -749,6 +769,8 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
         var connection = _simConnect;
         _simConnect = null;
         _payloadStationCount = 0;
+        _fuelTotalCapacityGallons = 0;
+        _unusableFuelTotalQuantityGallons = 0;
         _fuelWeightPerGallonPounds = 0;
         _usesModernFuelSystem = false;
         _aircraftTitle = string.Empty;
