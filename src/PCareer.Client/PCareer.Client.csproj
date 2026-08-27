@@ -18,6 +18,7 @@
     <Description>Microsoft Flight Simulator 2024 companion for Virtual Pilot Network.</Description>
     <PackageLicenseExpression>MPL-2.0</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/lukaspotempa/pcareer-desktop</RepositoryUrl>
+    <ApplicationIcon>Resources\app-icon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <PropertyGroup Condition="Exists('$(SimConnectAssemblyPath)')">
@@ -45,6 +46,13 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4129.50" ExcludeAssets="build" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\brand-logo.png"
+                      LogicalName="PCareer.Client.Resources.BrandLogo.png" />
+    <EmbeddedResource Include="Resources\app-icon.ico"
+                      LogicalName="PCareer.Client.Resources.AppIcon.ico" />
   </ItemGroup>
 
   <ItemGroup>

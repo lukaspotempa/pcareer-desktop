@@ -13,6 +13,7 @@ public sealed class UpdateForm : Form
     {
         _updateClient = updateClient;
         Text = "Virtual Pilot Network";
+        Icon = BrandAssets.ApplicationIcon;
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
@@ -31,7 +32,7 @@ public sealed class UpdateForm : Form
         {
             var environment = await WebViewRuntime.CreateEnvironmentAsync();
             await _web.EnsureCoreWebView2Async(environment);
-            _web.CoreWebView2.NavigateToString(UpdateHtmlContent.Template);
+            _web.CoreWebView2.NavigateToString(BrandAssets.AddLogoToHtml(UpdateHtmlContent.Template));
             // Small delay to let the HTML render before we start the check
             await Task.Delay(300);
             await CheckForUpdatesAsync();

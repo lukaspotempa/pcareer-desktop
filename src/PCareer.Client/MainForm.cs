@@ -27,9 +27,10 @@ public sealed class MainForm : Form
         _serverClient = serverClient;
         _session = session;
         Text = "Virtual Pilot Network";
+        Icon = BrandAssets.ApplicationIcon;
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(520, 680);
-        Size = new Size(600, 780);
+        Size = new Size(600, 680);
         BackColor = Palette.AppBackground;
 
         Controls.Add(_web);
@@ -77,7 +78,7 @@ public sealed class MainForm : Form
         {
             var environment = await WebViewRuntime.CreateEnvironmentAsync();
             await _web.EnsureCoreWebView2Async(environment);
-            _web.CoreWebView2.NavigateToString(HtmlContent.Template);
+            _web.CoreWebView2.NavigateToString(BrandAssets.AddLogoToHtml(HtmlContent.Template));
         }
         catch (Exception ex)
         {
@@ -118,6 +119,12 @@ public sealed class MainForm : Form
             case "refreshContract":
                 _ = LoadActiveContractAsync();
                 break;
+            case "loadPayload":
+                LoadPayloadClicked();
+                break;
+            case "loadFuel":
+                LoadFuelClicked();
+                break;
         }
     }
 
@@ -125,22 +132,25 @@ public sealed class MainForm : Form
     {
         if (_web.CoreWebView2 is null) return;
 
+        var canApplyLoads = CanApplyLoads();
+
         var state = new
         {
-            user = $"{_session.User.DisplayName}  ·  @{_session.User.Username}",
+            user = $"{_session.User.DisplayName}",
 
             connText = _simulator.StatusMessage,
             connDot = _simulator.IsConnected ? "ok" : "warn",
 
             contract = _contract is null
-                ? "None · Accept a contract on the Virtual Pilot Network website, then refresh."
-                : $"{_contract.FlightDesignator}  ·  {_contract.RouteDisplay}  ·  {_contract.RequiredAircraftDisplay}",
+                ? "None | Accept a contract on the Virtual Pilot Network website, then refresh."
+                : $"{_contract.FlightDesignator}  |  {_contract.RouteDisplay}  |  {_contract.RequiredAircraftDisplay}",
 
             aircraft = _latestTelemetry is null
                 ? "--"
                 : string.IsNullOrWhiteSpace(_latestTelemetry.AircraftAtcModel)
                     ? _latestTelemetry.AircraftTitle
-                    : $"{_latestTelemetry.AircraftTitle}  ·  ATC {_latestTelemetry.AircraftAtcType} {_latestTelemetry.AircraftAtcModel}",
+                    : $"{_latestTelemetry.AircraftTitle}  ·  "
+                        + $"{_latestTelemetry.AircraftAtcType} {_latestTelemetry.AircraftAtcModel}",
 
             stateText = FlightStatusText(),
             stateDot = _flight.Phase switch
@@ -160,6 +170,14 @@ public sealed class MainForm : Form
 
             startEnabled = _startButton.Enabled,
             finishEnabled = _finishButton.Enabled,
+            loadPayloadEnabled = canApplyLoads,
+            loadFuelEnabled = canApplyLoads && _contract?.RequiredFuelKg is not null,
+            payloadButtonText = _contract is null
+                ? "Load payload"
+                : $"Load payload  ·  {_contract.RequiredPayloadKg:0} kg",
+            fuelButtonText = _contract?.RequiredFuelKg is double fuel
+                ? $"Load fuel  ·  {fuel:0} kg"
+                : "Load fuel  ·  no target",
         };
 
         _web.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(state));
@@ -192,8 +210,8 @@ public sealed class MainForm : Form
         {
             _contract = await _serverClient.GetActiveContractAsync();
             _contractLabel.Text = _contract is null
-                ? "None · Accept a contract on the Virtual Pilot Network website, then refresh."
-                : $"{_contract.FlightDesignator}  ·  {_contract.RouteDisplay}  ·  {_contract.RequiredAircraftDisplay}";
+                ? "None | Accept a contract on the Virtual Pilot Network website, then refresh."
+                : $"{_contract.FlightDesignator}  |  {_contract.RouteDisplay}  |  {_contract.RequiredAircraftDisplay}";
         }
         catch (Exception exception)
         {
@@ -241,7 +259,7 @@ public sealed class MainForm : Form
 
         _aircraftLabel.Text = string.IsNullOrWhiteSpace(telemetry.AircraftAtcModel)
             ? telemetry.AircraftTitle
-            : $"{telemetry.AircraftTitle}  ·  ATC {telemetry.AircraftAtcType} {telemetry.AircraftAtcModel}";
+            : $"{telemetry.AircraftTitle}  »  ATC {telemetry.AircraftAtcType} {telemetry.AircraftAtcModel}";
 
         _flightStatusLabel.Text = FlightStatusText();
         _finishButton.Enabled = _flight.CanFinish;
@@ -270,6 +288,52 @@ public sealed class MainForm : Form
     }
 
     // ── Actions ──────────────────────────────────────────────────────────
+
+    private bool CanApplyLoads() =>
+        _contract is not null
+        && _simulator.IsConnected
+        && _latestTelemetry is { OnGround: true }
+        && _flight.Phase is FlightPhase.Ready or FlightPhase.Loading;
+
+    private void LoadPayloadClicked()
+    {
+        if (!CanApplyLoads() || _contract is null)
+            return;
+
+        try
+        {
+            _simulator.SetPayloadKilograms(_contract.RequiredPayloadKg);
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(
+                this,
+                exception.Message,
+                "Could not load payload",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+    }
+
+    private void LoadFuelClicked()
+    {
+        if (!CanApplyLoads() || _contract?.RequiredFuelKg is not double fuelKilograms)
+            return;
+
+        try
+        {
+            _simulator.SetFuelKilograms(fuelKilograms);
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(
+                this,
+                exception.Message,
+                "Could not load fuel",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+    }
 
     private async void StartFlightClicked(object? sender, EventArgs eventArgs)
     {
@@ -440,7 +504,7 @@ public sealed class MainForm : Form
     {
         _flight.ResetForNextFlight();
         _contract = null;
-        _contractLabel.Text = "None · Accept a contract on the Virtual Pilot Network website, then refresh.";
+        _contractLabel.Text = "None | Accept a contract on the Virtual Pilot Network website, then refresh.";
         _telemetryServerLabel.Text = "Waiting for an active flight.";
         _flightStatusLabel.Text = FlightStatusText();
         _finishButton.Enabled = false;
@@ -451,7 +515,7 @@ public sealed class MainForm : Form
     private string FlightStatusText()
     {
         var elapsed = _flight.StartedAt is DateTimeOffset startedAt
-            ? $"  ·  {DateTimeOffset.UtcNow - startedAt:hh\\:mm\\:ss}"
+            ? $"  »  {DateTimeOffset.UtcNow - startedAt:hh\\:mm\\:ss}"
             : string.Empty;
         return _flight.Phase switch
         {

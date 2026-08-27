@@ -47,6 +47,41 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
         public int EngineCount;
         public double GearPositionPercent;
         public int ParkingBrakeSet;
+        public int PayloadStationCount;
+        public double FuelTotalCapacityGallons;
+        public double FuelWeightPerGallonPounds;
+        public int NewFuelSystem;
+        public double ModernTank1Capacity;
+        public double ModernTank2Capacity;
+        public double ModernTank3Capacity;
+        public double ModernTank4Capacity;
+        public double ModernTank5Capacity;
+        public double ModernTank6Capacity;
+        public double ModernTank7Capacity;
+        public double ModernTank8Capacity;
+        public double ModernTank9Capacity;
+        public double ModernTank10Capacity;
+        public double ModernTank11Capacity;
+        public double ModernTank12Capacity;
+        public double ModernTank13Capacity;
+        public double ModernTank14Capacity;
+        public double ModernTank15Capacity;
+        public double ModernTank16Capacity;
+        public double ModernTank17Capacity;
+        public double ModernTank18Capacity;
+        public double ModernTank19Capacity;
+        public double ModernTank20Capacity;
+        public double LegacyCenterCapacity;
+        public double LegacyCenter2Capacity;
+        public double LegacyCenter3Capacity;
+        public double LegacyExternal1Capacity;
+        public double LegacyExternal2Capacity;
+        public double LegacyLeftAuxCapacity;
+        public double LegacyLeftMainCapacity;
+        public double LegacyLeftTipCapacity;
+        public double LegacyRightAuxCapacity;
+        public double LegacyRightMainCapacity;
+        public double LegacyRightTipCapacity;
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi, Pack = 1)]
@@ -61,6 +96,12 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
     }
 
     private SimConnect? _simConnect;
+    private int _payloadStationCount;
+    private double _fuelWeightPerGallonPounds;
+    private bool _usesModernFuelSystem;
+    private readonly double[] _modernFuelTankCapacities = new double[20];
+    private readonly double[] _legacyFuelTankCapacities = new double[11];
+    private readonly HashSet<int> _definedWriteDefinitions = [];
 
     public bool IsConnected { get; private set; }
 
@@ -213,6 +254,37 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
         AddInt32(connection, DataDefinition.UserAircraft, "NUMBER OF ENGINES", "number");
         AddFloat64(connection, DataDefinition.UserAircraft, "GEAR TOTAL PCT EXTENDED", "percent");
         AddInt32(connection, DataDefinition.UserAircraft, "BRAKE PARKING POSITION", "bool");
+        AddInt32(connection, DataDefinition.UserAircraft, "PAYLOAD STATION COUNT", "number");
+        AddFloat64(connection, DataDefinition.UserAircraft, "FUEL TOTAL CAPACITY", "gallons");
+        AddFloat64(connection, DataDefinition.UserAircraft, "FUEL WEIGHT PER GALLON", "pounds");
+        AddInt32(connection, DataDefinition.UserAircraft, "NEW FUEL SYSTEM", "bool");
+        for (var tank = 1; tank <= 20; tank++)
+        {
+            AddFloat64(
+                connection,
+                DataDefinition.UserAircraft,
+                $"FUELSYSTEM TANK CAPACITY:{tank}",
+                "gallons");
+        }
+
+        string[] legacyFuelCapacityVariables =
+        [
+            "FUEL TANK CENTER CAPACITY",
+            "FUEL TANK CENTER2 CAPACITY",
+            "FUEL TANK CENTER3 CAPACITY",
+            "FUEL TANK EXTERNAL1 CAPACITY",
+            "FUEL TANK EXTERNAL2 CAPACITY",
+            "FUEL TANK LEFT AUX CAPACITY",
+            "FUEL TANK LEFT MAIN CAPACITY",
+            "FUEL TANK LEFT TIP CAPACITY",
+            "FUEL TANK RIGHT AUX CAPACITY",
+            "FUEL TANK RIGHT MAIN CAPACITY",
+            "FUEL TANK RIGHT TIP CAPACITY",
+        ];
+        foreach (var variable in legacyFuelCapacityVariables)
+        {
+            AddFloat64(connection, DataDefinition.UserAircraft, variable, "gallons");
+        }
 
         connection.RegisterDataDefineStruct<UserAircraftData>(DataDefinition.UserAircraft);
         connection.RequestDataOnSimObject(
@@ -249,14 +321,6 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
             SIMCONNECT_DATATYPE.STRING256,
             0,
             SimConnect.SIMCONNECT_UNUSED);
-        connection.AddToDataDefinition(
-            DataDefinition.AircraftIdentity,
-            "ATC MODEL",
-            null,
-            SIMCONNECT_DATATYPE.STRING256,
-            0,
-            SimConnect.SIMCONNECT_UNUSED);
-
         connection.RegisterDataDefineStruct<AircraftIdentityData>(DataDefinition.AircraftIdentity);
     }
 
@@ -273,6 +337,140 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
             0,
             0,
             0);
+    }
+
+    public void SetPayloadKilograms(double payloadKilograms)
+    {
+        var connection = _simConnect
+            ?? throw new InvalidOperationException("Microsoft Flight Simulator is not connected.");
+        if (!double.IsFinite(payloadKilograms) || payloadKilograms < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(payloadKilograms),
+                "Payload must be a non-negative weight.");
+        }
+
+        var stationCount = Math.Clamp(_payloadStationCount, 0, 15);
+        if (stationCount == 0)
+        {
+            throw new InvalidOperationException("The loaded aircraft does not expose any payload stations.");
+        }
+
+        const double poundsPerKilogram = 2.20462262185d;
+        var stationWeight = payloadKilograms * poundsPerKilogram / stationCount;
+        for (var station = 1; station <= stationCount; station++)
+        {
+            SetWritableValue(
+                connection,
+                100 + station,
+                $"PAYLOAD STATION WEIGHT:{station}",
+                "pounds",
+                stationWeight);
+        }
+    }
+
+    public void SetFuelKilograms(double fuelKilograms)
+    {
+        var connection = _simConnect
+            ?? throw new InvalidOperationException("Microsoft Flight Simulator is not connected.");
+        if (!double.IsFinite(fuelKilograms) || fuelKilograms < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(fuelKilograms),
+                "Fuel must be a non-negative weight.");
+        }
+        if (_fuelWeightPerGallonPounds <= 0)
+        {
+            throw new InvalidOperationException("The loaded aircraft did not report a usable fuel capacity.");
+        }
+
+        var capacities = _usesModernFuelSystem
+            ? _modernFuelTankCapacities
+            : _legacyFuelTankCapacities;
+        var totalCapacityGallons = capacities.Where(capacity => capacity > 0.001d).Sum();
+        if (totalCapacityGallons <= 0)
+        {
+            throw new InvalidOperationException("The loaded aircraft did not expose any writable fuel tanks.");
+        }
+
+        const double kilogramsPerPound = 0.45359237d;
+        var capacityKilograms =
+            totalCapacityGallons * _fuelWeightPerGallonPounds * kilogramsPerPound;
+        if (fuelKilograms > capacityKilograms + 1d)
+        {
+            throw new InvalidOperationException(
+                $"The requested {fuelKilograms:0.0} kg exceeds this aircraft's "
+                + $"{capacityKilograms:0.0} kg fuel capacity.");
+        }
+
+        var level = Math.Clamp(fuelKilograms / capacityKilograms, 0d, 1d);
+        if (_usesModernFuelSystem)
+        {
+            for (var tank = 0; tank < _modernFuelTankCapacities.Length; tank++)
+            {
+                if (_modernFuelTankCapacities[tank] <= 0.001d)
+                {
+                    continue;
+                }
+
+                SetWritableValue(
+                    connection,
+                    300 + tank,
+                    $"FUELSYSTEM TANK LEVEL:{tank + 1}",
+                    "percent over 100",
+                    level);
+            }
+            return;
+        }
+
+        string[] legacyFuelLevelVariables =
+        [
+            "FUEL TANK CENTER LEVEL",
+            "FUEL TANK CENTER2 LEVEL",
+            "FUEL TANK CENTER3 LEVEL",
+            "FUEL TANK EXTERNAL1 LEVEL",
+            "FUEL TANK EXTERNAL2 LEVEL",
+            "FUEL TANK LEFT AUX LEVEL",
+            "FUEL TANK LEFT MAIN LEVEL",
+            "FUEL TANK LEFT TIP LEVEL",
+            "FUEL TANK RIGHT AUX LEVEL",
+            "FUEL TANK RIGHT MAIN LEVEL",
+            "FUEL TANK RIGHT TIP LEVEL",
+        ];
+        for (var tank = 0; tank < _legacyFuelTankCapacities.Length; tank++)
+        {
+            if (_legacyFuelTankCapacities[tank] <= 0.001d)
+            {
+                continue;
+            }
+
+            SetWritableValue(
+                connection,
+                200 + tank,
+                legacyFuelLevelVariables[tank],
+                "percent over 100",
+                level);
+        }
+    }
+
+    private void SetWritableValue(
+        SimConnect connection,
+        int definitionId,
+        string name,
+        string units,
+        double value)
+    {
+        var definition = (DataDefinition)definitionId;
+        if (_definedWriteDefinitions.Add(definitionId))
+        {
+            AddFloat64(connection, definition, name, units);
+        }
+
+        connection.SetDataOnSimObject(
+            definition,
+            SimConnect.SIMCONNECT_OBJECT_ID_USER,
+            SIMCONNECT_DATA_SET_FLAG.DEFAULT,
+            value);
     }
 
     private void OnSimObjectData(SimConnect sender, SIMCONNECT_RECV_SIMOBJECT_DATA data)
@@ -295,13 +493,41 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
 
     private void PublishTelemetry(UserAircraftData sample)
     {
+        _payloadStationCount = sample.PayloadStationCount;
+        _fuelWeightPerGallonPounds = sample.FuelWeightPerGallonPounds;
+        _usesModernFuelSystem = sample.NewFuelSystem != 0;
+        double[] modernCapacities =
+        [
+            sample.ModernTank1Capacity, sample.ModernTank2Capacity,
+            sample.ModernTank3Capacity, sample.ModernTank4Capacity,
+            sample.ModernTank5Capacity, sample.ModernTank6Capacity,
+            sample.ModernTank7Capacity, sample.ModernTank8Capacity,
+            sample.ModernTank9Capacity, sample.ModernTank10Capacity,
+            sample.ModernTank11Capacity, sample.ModernTank12Capacity,
+            sample.ModernTank13Capacity, sample.ModernTank14Capacity,
+            sample.ModernTank15Capacity, sample.ModernTank16Capacity,
+            sample.ModernTank17Capacity, sample.ModernTank18Capacity,
+            sample.ModernTank19Capacity, sample.ModernTank20Capacity,
+        ];
+        modernCapacities.CopyTo(_modernFuelTankCapacities, 0);
+        double[] legacyCapacities =
+        [
+            sample.LegacyCenterCapacity, sample.LegacyCenter2Capacity,
+            sample.LegacyCenter3Capacity, sample.LegacyExternal1Capacity,
+            sample.LegacyExternal2Capacity, sample.LegacyLeftAuxCapacity,
+            sample.LegacyLeftMainCapacity, sample.LegacyLeftTipCapacity,
+            sample.LegacyRightAuxCapacity, sample.LegacyRightMainCapacity,
+            sample.LegacyRightTipCapacity,
+        ];
+        legacyCapacities.CopyTo(_legacyFuelTankCapacities, 0);
+
         TelemetryReceived?.Invoke(
             this,
             new TelemetrySnapshot(
                 ObservedAt: DateTimeOffset.UtcNow,
                 AircraftTitle: sample.AircraftTitle?.TrimEnd('\0') ?? "Unknown aircraft",
-                AircraftAtcModel: sample.AircraftAtcModel?.TrimEnd('\0') ?? string.Empty,
-                AircraftAtcType: sample.AircraftAtcType?.TrimEnd('\0') ?? string.Empty,
+                AircraftAtcModel: SimulatorAircraftIdentity.DecodeAtcModel(sample.AircraftAtcModel),
+                AircraftAtcType: SimulatorAircraftIdentity.DecodeAtcType(sample.AircraftAtcType),
                 LatitudeDegrees: sample.LatitudeDegrees,
                 LongitudeDegrees: sample.LongitudeDegrees,
                 AltitudeFeet: sample.AltitudeFeet,
@@ -330,8 +556,8 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
             new AircraftSnapshot(
                 ObservedAt: DateTimeOffset.UtcNow,
                 AircraftTitle: sample.AircraftTitle?.TrimEnd('\0') ?? "Unknown aircraft",
-                AircraftAtcType: sample.AircraftAtcType?.TrimEnd('\0') ?? string.Empty,
-                AircraftAtcModel: sample.AircraftAtcModel?.TrimEnd('\0') ?? string.Empty));
+                AircraftAtcType: SimulatorAircraftIdentity.DecodeAtcType(sample.AircraftAtcType),
+                AircraftAtcModel: SimulatorAircraftIdentity.DecodeAtcModel(sample.AircraftAtcModel)));
     }
 
     private void OnQuit(SimConnect sender, SIMCONNECT_RECV data)
@@ -344,7 +570,9 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
 
     private void OnException(SimConnect sender, SIMCONNECT_RECV_EXCEPTION data)
     {
-        StatusMessage = $"SimConnect reported {data.dwException} (send ID {data.dwSendID}).";
+        StatusMessage = data.dwException == 20
+            ? $"SimConnect rejected a simulator data write (send ID {data.dwSendID})."
+            : $"SimConnect reported {data.dwException} (send ID {data.dwSendID}).";
         ConnectionChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -360,6 +588,12 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
     {
         var connection = _simConnect;
         _simConnect = null;
+        _payloadStationCount = 0;
+        _fuelWeightPerGallonPounds = 0;
+        _usesModernFuelSystem = false;
+        Array.Clear(_modernFuelTankCapacities);
+        Array.Clear(_legacyFuelTankCapacities);
+        _definedWriteDefinitions.Clear();
         if (connection is not null)
         {
             try

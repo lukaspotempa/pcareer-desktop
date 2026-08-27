@@ -27,10 +27,8 @@ body{display:flex;align-items:center;justify-content:center;padding:24px}
   background:var(--surface);padding:36px 32px;text-align:center}
 
 /* logo */
-.logo{width:52px;height:52px;border-radius:14px;margin:0 auto 20px;
-  background:radial-gradient(circle at 50% 50%,rgba(99,102,241,0.15),rgba(99,102,241,0.04));
-  border:1px solid rgba(99,102,241,0.18);display:grid;place-items:center}
-.logo-inner{font-size:17px;font-weight:700;color:var(--indigo2);letter-spacing:0.02em}
+.logo{width:72px;height:72px;margin:0 auto 20px;display:grid;place-items:center}
+.logo img{width:72px;height:72px;object-fit:contain;display:block}
 
 /* states */
 .title{font-size:18px;font-weight:600;color:var(--text);margin-bottom:6px}
@@ -79,7 +77,7 @@ body{display:flex;align-items:center;justify-content:center;padding:24px}
 <body>
 
 <div class="card">
-  <div class="logo"><span class="logo-inner">VP</span></div>
+  <div class="logo"><img src="{{BRAND_LOGO_DATA_URI}}" alt="Virtual Pilot Network logo" /></div>
 
   <!-- checking state -->
   <div id="stateChecking">

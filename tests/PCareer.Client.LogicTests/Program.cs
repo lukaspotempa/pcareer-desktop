@@ -81,8 +81,72 @@ Assert(
         == "Select the required aircraft: Cessna 172 Skyhawk.",
     "An unrelated aircraft must not pass the normalized aircraft check.");
 
+var a320NeoContract = new ContractAssignment(
+    ContractId: "A20N-TEST",
+    DepartureName: "Munich",
+    ArrivalName: "Frankfurt",
+    RequiredAircraftTitleContains: "Airbus A-320neo",
+    DepartureLatitudeDegrees: null,
+    DepartureLongitudeDegrees: null,
+    DepartureRadiusNauticalMiles: 2)
+{
+    AircraftIcao = "A20N",
+    AircraftSimulatorIdentities = new[]
+    {
+        new AircraftSimulatorIdentity("msfs_2024", "atc_model", "exact", "A20N"),
+        new AircraftSimulatorIdentity(
+            "msfs_2024",
+            "title",
+            "contains",
+            "Airbus A320 Neo FlyByWire"),
+    },
+};
+Assert(
+    controller.EvaluateReadiness(
+        true,
+        a320NeoContract,
+        Sample(
+            onGround: true,
+            altitudeAgl: 5,
+            aircraftTitle: "FWB SA Lufthansa D-AIJA",
+            aircraftAtcModel: "A320",
+            aircraftAtcType: "Airbus"))
+        == "Ready to begin loading.",
+    "A FlyByWire A320neo livery should match without depending on its airline title.");
+Assert(
+    SimulatorAircraftIdentity.DecodeAtcModel("ATCCOM.AC_MODEL_A20N.0.text") == "A20N"
+        && SimulatorAircraftIdentity.DecodeAtcType("ATCCOM.ATC_NAME AIRBUS.0.text") == "AIRBUS",
+    "Localized MSFS ATC resource keys should decode to stable aircraft identifiers.");
+Assert(
+    controller.EvaluateReadiness(
+        true,
+        a320NeoContract,
+        Sample(
+            onGround: true,
+            altitudeAgl: 5,
+            aircraftTitle: "FWB SA Lufthansa D-AIJA",
+            aircraftAtcModel: "ATCCOM.AC_MODEL_A20N.0.text",
+            aircraftAtcType: "ATCCOM.ATC_NAME AIRBUS.0.text"))
+        == "Ready to begin loading.",
+    "Localized MSFS identity keys should still match an A20N contract.");
+Assert(
+    controller.EvaluateReadiness(
+        true,
+        a320NeoContract,
+        Sample(
+            onGround: true,
+            altitudeAgl: 5,
+            aircraftTitle: "FenixA320 CFM SL Lufthansa",
+            aircraftAtcModel: "A320",
+            aircraftAtcType: "Airbus"))
+        == "Select the required aircraft: Airbus A-320neo.",
+    "A different Airbus A320 family must not match the FlyByWire A320neo fallback.");
+
 controller.BeginLoading();
 Assert(controller.Phase == FlightPhase.Loading, "Start must first enter the loading phase.");
+Assert(
+    !controller.LoadingStatus(contract, onGround).Contains("±", StringComparison.Ordinal),
+    "Player-facing readiness text must not reveal the load tolerance.");
 controller.Start(Guid.NewGuid(), onGround);
 Assert(controller.Phase == FlightPhase.Started, "Start must enter Started.");
 
@@ -127,11 +191,12 @@ static TelemetrySnapshot Sample(
     bool onGround,
     double altitudeAgl,
     string aircraftTitle = "Cessna 172 Skyhawk",
-    string aircraftAtcModel = "C172") => new(
+    string aircraftAtcModel = "C172",
+    string aircraftAtcType = "Cessna") => new(
     ObservedAt: DateTimeOffset.UtcNow,
     AircraftTitle: aircraftTitle,
     AircraftAtcModel: aircraftAtcModel,
-    AircraftAtcType: "Cessna",
+    AircraftAtcType: aircraftAtcType,
     LatitudeDegrees: 52.3667,
     LongitudeDegrees: 13.5033,
     AltitudeFeet: 2500,

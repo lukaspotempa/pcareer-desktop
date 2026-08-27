@@ -34,6 +34,14 @@ internal sealed class SimConnectUnavailableService : ISimulatorConnection
         throw new InvalidOperationException(
             "SimConnect support was not included in this build. Install the MSFS 2024 SDK and rebuild.");
 
+    public void SetPayloadKilograms(double payloadKilograms) =>
+        throw new InvalidOperationException(
+            "SimConnect support was not included in this build. Install the MSFS 2024 SDK and rebuild.");
+
+    public void SetFuelKilograms(double fuelKilograms) =>
+        throw new InvalidOperationException(
+            "SimConnect support was not included in this build. Install the MSFS 2024 SDK and rebuild.");
+
     public void Dispose()
     {
         GC.SuppressFinalize(this);

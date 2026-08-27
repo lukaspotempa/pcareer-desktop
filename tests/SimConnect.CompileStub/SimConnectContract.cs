@@ -5,6 +5,7 @@ namespace Microsoft.FlightSimulator.SimConnect;
 public enum SIMCONNECT_DATATYPE { FLOAT64, INT32, STRING256 }
 public enum SIMCONNECT_PERIOD { SIM_FRAME, ONCE }
 public enum SIMCONNECT_DATA_REQUEST_FLAG { DEFAULT }
+public enum SIMCONNECT_DATA_SET_FLAG { DEFAULT }
 
 public class SIMCONNECT_RECV { }
 public sealed class SIMCONNECT_RECV_OPEN : SIMCONNECT_RECV { }
@@ -34,6 +35,7 @@ public sealed class SimConnect : IDisposable
     public void AddToDataDefinition(Enum definitionId, string name, string? units, SIMCONNECT_DATATYPE dataType, float epsilon, uint datumId) { }
     public void RegisterDataDefineStruct<T>(Enum definitionId) where T : struct { }
     public void RequestDataOnSimObject(Enum requestId, Enum definitionId, uint objectId, SIMCONNECT_PERIOD period, SIMCONNECT_DATA_REQUEST_FLAG flags, uint origin, uint interval, uint limit) { }
+    public void SetDataOnSimObject(Enum definitionId, uint objectId, SIMCONNECT_DATA_SET_FLAG flags, object data) { }
     public void ReceiveMessage() { }
     public void Dispose() { }
 }

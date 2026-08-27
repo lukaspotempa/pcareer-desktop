@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Drawing.Drawing2D;
 using PCareer.Client.Models;
 using PCareer.Client.Services;
 
@@ -8,147 +9,235 @@ public sealed class LoginForm : Form
 {
     private readonly PCareerApiClient _api;
     private readonly CancellationTokenSource _cancellation = new();
-    private readonly Panel _card;
-
+    private readonly Image _brandLogo;
+    private readonly RoundedPanel _card;
     private readonly Label _statusLabel;
-    private readonly Button _loginButton;
+    private readonly RoundedButton _loginButton;
 
     public LoginForm(PCareerApiClient api)
     {
         _api = api;
-        Text = "Virtual Pilot Network \u00b7 Discord login";
+        Text = "Virtual Pilot Network";
+        Icon = BrandAssets.ApplicationIcon;
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
-        ClientSize = new Size(440, 440);
-        BackColor = Color.FromArgb(11, 14, 18);
-        ForeColor = Color.FromArgb(241, 245, 249);
+        ClientSize = new Size(780, 380);
+        AutoScaleMode = AutoScaleMode.Dpi;
+        BackColor = Palette.AppBackground;
+        ForeColor = Palette.PrimaryText;
         Font = new Font("Segoe UI", 10);
+        DoubleBuffered = true;
 
-        _card = new Panel
+        _brandLogo = LoadBrandLogo();
+
+        _card = new RoundedPanel
         {
-            Size = new Size(360, 260),
-            BackColor = Color.FromArgb(20, 25, 32),
-        };
-        _card.Paint += (_, e) =>
-        {
-            using var pen = new Pen(Color.FromArgb(20, 255, 255, 255)) { Width = 1 };
-            e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-            e.Graphics.DrawRectangle(pen, new Rectangle(0, 0, _card.Width - 1, _card.Height - 1));
+            Size = new Size(704, 350),
+            BackColor = Color.FromArgb(14, 21, 28),
+            CornerRadius = 16,
         };
 
-        var cardInner = new TableLayoutPanel
+        var brandPane = new Panel
         {
-            Dock = DockStyle.Fill,
-            Padding = new Padding(32, 28, 32, 24),
-            ColumnCount = 1,
-            RowCount = 4,
+            Location = Point.Empty,
+            Size = new Size(244, 350),
+            BackColor = Color.FromArgb(14, 21, 28),
+        };
+
+        var logo = new PictureBox
+        {
+            Location = new Point(38, 38),
+            Size = new Size(168, 142),
+            Image = _brandLogo,
+            SizeMode = PictureBoxSizeMode.Zoom,
+            BackColor = Color.Transparent,
+            AccessibleName = "Virtual Pilot Network logo",
+        };
+
+        var brandName = new Label
+        {
+            Location = new Point(24, 198),
+            Size = new Size(196, 48),
+            Text = "VIRTUAL PILOT\r\nNETWORK",
+            TextAlign = ContentAlignment.MiddleCenter,
+            Font = new Font("Segoe UI", 13, FontStyle.Bold),
+            ForeColor = Palette.PrimaryText,
             BackColor = Color.Transparent,
         };
-        cardInner.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        cardInner.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        cardInner.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        cardInner.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        cardInner.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        var productName = new Label
+        {
+            Location = new Point(24, 256),
+            Size = new Size(196, 19),
+            Text = "CAREER COMPANION",
+            TextAlign = ContentAlignment.MiddleCenter,
+            Font = new Font("Segoe UI", 7.5f, FontStyle.Bold),
+            ForeColor = Palette.AccentLight,
+            BackColor = Color.Transparent,
+        };
+        var brandDescription = new Label
+        {
+            Location = new Point(28, 288),
+            Size = new Size(188, 42),
+            Text = "The companion app to Virtual Pilot Network.",
+            TextAlign = ContentAlignment.TopCenter,
+            Font = new Font("Segoe UI", 8.25f),
+            ForeColor = Palette.DimText,
+            BackColor = Color.Transparent,
+        };
+
+        brandPane.Controls.Add(logo);
+        brandPane.Controls.Add(brandName);
+        brandPane.Controls.Add(productName);
+        brandPane.Controls.Add(brandDescription);
+
+        var columnDivider = new Panel
+        {
+            Location = new Point(244, 0),
+            Size = new Size(1, 350),
+            BackColor = Palette.BorderHover,
+        };
 
         var title = new Label
         {
-            Text = "Login",
+            Location = new Point(280, 34),
             AutoSize = true,
-            Font = new Font("Segoe UI", 22, FontStyle.Bold),
-            ForeColor = Color.White,
+            Text = "Welcome back",
+            Font = new Font("Segoe UI", 20, FontStyle.Bold),
+            ForeColor = Palette.PrimaryText,
             BackColor = Color.Transparent,
-            Margin = new Padding(0, 0, 0, 6),
         };
 
         var subtitle = new Label
         {
-            Text = "Continue with your Discord account to access your career dashboard.",
-            AutoSize = true,
-            MaximumSize = new Size(296, 0),
+            Location = new Point(280, 75),
+            Size = new Size(392, 44),
+            Text = "Sign in with Discord to access your active contracts and sync your flight progress.",
             Font = new Font("Segoe UI", 9.5f),
-            ForeColor = Color.FromArgb(148, 163, 184),
+            ForeColor = Palette.MutedText,
             BackColor = Color.Transparent,
-            Margin = new Padding(0, 0, 0, 22),
         };
 
-        _loginButton = new Button
+        _loginButton = new RoundedButton
         {
-            Text = "Continue with Discord",
-            Width = 296,
-            Height = 44,
+            Location = new Point(314, 148),
+            Size = new Size(324, 46),
+            Text = "Login with Discord",
             FlatStyle = FlatStyle.Flat,
-            BackColor = Color.FromArgb(88, 101, 242),
+            BackColor = Palette.DiscordBlurple,
+            HoverColor = Color.FromArgb(71, 82, 196),
             ForeColor = Color.White,
             Font = new Font("Segoe UI", 10, FontStyle.Bold),
             Cursor = Cursors.Hand,
-            Margin = new Padding(0, 0, 0, 12),
+            CornerRadius = 9,
+            TabIndex = 0,
+            AccessibleName = "Open Discord to sign in",
+            AccessibleDescription = "Opens Discord authentication in your default browser.",
         };
         _loginButton.FlatAppearance.BorderSize = 0;
         _loginButton.Click += LoginClicked;
 
         _statusLabel = new Label
         {
+            Location = new Point(314, 205),
+            Size = new Size(324, 26),
             Text = "",
-            AutoSize = true,
-            MaximumSize = new Size(296, 0),
-            Font = new Font("Segoe UI", 9f),
-            ForeColor = Color.FromArgb(148, 163, 184),
+            TextAlign = ContentAlignment.TopCenter,
+            Font = new Font("Segoe UI", 8f),
+            ForeColor = Palette.DimText,
             BackColor = Color.Transparent,
-            Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.BottomLeft,
         };
 
-        cardInner.Controls.Add(title, 0, 0);
-        cardInner.Controls.Add(subtitle, 0, 1);
-        cardInner.Controls.Add(_loginButton, 0, 2);
-        cardInner.Controls.Add(_statusLabel, 0, 3);
-        _card.Controls.Add(cardInner);
-
-        Controls.Add(_card);
-
+        var securityDivider = new Panel
+        {
+            Location = new Point(280, 256),
+            Size = new Size(392, 1),
+            BackColor = Palette.Border,
+        };
+        var securityHeading = new Label
+        {
+            Location = new Point(280, 276),
+            AutoSize = true,
+            Text = "SECURE DISCORD AUTHENTICATION",
+            Font = new Font("Segoe UI", 7.5f, FontStyle.Bold),
+            ForeColor = Palette.DimText,
+            BackColor = Color.Transparent,
+        };
         var securityNote = new Label
         {
-            Text = "Authentication is handled directly by Discord. Your password is never shared with Virtual Pilot Network.",
-            AutoSize = true,
-            MaximumSize = new Size(376, 0),
-            Font = new Font("Segoe UI", 8f),
-            ForeColor = Color.FromArgb(100, 116, 139),
+            Location = new Point(280, 296),
+            Size = new Size(392, 34),
+            Text = "Your password is never shared with Virtual Pilot Network.",
+            Font = new Font("Segoe UI", 8.25f),
+            ForeColor = Palette.MutedText,
             BackColor = Color.Transparent,
         };
-        Controls.Add(securityNote);
 
-        Resize += (_, _) => LayoutControls(securityNote);
-        Load += (_, _) => LayoutControls(securityNote);
+        _card.Controls.Add(brandPane);
+        _card.Controls.Add(columnDivider);
+        _card.Controls.Add(title);
+        _card.Controls.Add(subtitle);
+        _card.Controls.Add(_loginButton);
+        _card.Controls.Add(_statusLabel);
+        _card.Controls.Add(securityDivider);
+        _card.Controls.Add(securityHeading);
+        _card.Controls.Add(securityNote);
+        Controls.Add(_card);
+
+        AcceptButton = _loginButton;
+        Layout += (_, _) => CenterCard();
         FormClosed += (_, _) => _cancellation.Cancel();
     }
 
     public DesktopSession? Session { get; private set; }
 
-    private void LayoutControls(Label securityNote)
+    private void CenterCard()
     {
         _card.Location = new Point(
             (ClientSize.Width - _card.Width) / 2,
-            (ClientSize.Height - _card.Height) / 2 - 20);
-        securityNote.Location = new Point(
-            (ClientSize.Width - securityNote.PreferredWidth) / 2,
-            ClientSize.Height - securityNote.PreferredHeight - 16);
+            (ClientSize.Height - _card.Height) / 2);
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _brandLogo.Dispose();
+            _cancellation.Dispose();
+        }
+        base.Dispose(disposing);
+    }
+
+    private static Image LoadBrandLogo()
+    {
+        const string resourceName = "PCareer.Client.Resources.BrandLogo.png";
+        using var stream = typeof(LoginForm).Assembly.GetManifestResourceStream(resourceName)
+            ?? throw new InvalidOperationException($"Embedded resource '{resourceName}' was not found.");
+        using var source = Image.FromStream(stream);
+        return new Bitmap(source);
+    }
+
+    private void ShowStatus(string message, bool isError = false)
+    {
+        _statusLabel.Text = message;
+        _statusLabel.ForeColor = isError ? Palette.StatusError : Palette.DimText;
     }
 
     private async void LoginClicked(object? sender, EventArgs eventArgs)
     {
         _loginButton.Enabled = false;
+        _loginButton.Text = "Opening Discord…";
+        UseWaitCursor = true;
         try
         {
-            _statusLabel.ForeColor = Color.FromArgb(148, 163, 184);
-            _statusLabel.Text = "Preparing secure Discord login...";
+            ShowStatus("Preparing a secure Discord sign-in…");
             var login = await _api.BeginDiscordLoginAsync(_cancellation.Token);
             Process.Start(new ProcessStartInfo(login.AuthorizationUrl.AbsoluteUri)
             {
                 UseShellExecute = true,
             });
-            _statusLabel.Text = "Complete authorization in your browser. This window will update automatically.";
+            ShowStatus("Finish signing in in your browser. We'll update automatically.");
 
             while (DateTimeOffset.UtcNow < login.ExpiresAt)
             {
@@ -163,16 +252,139 @@ public sealed class LoginForm : Form
                     return;
                 }
             }
-            throw new TimeoutException("Discord login expired. Please try again.");
+            throw new TimeoutException("Discord sign-in expired. Please try again.");
         }
         catch (OperationCanceledException) when (_cancellation.IsCancellationRequested)
         {
         }
         catch (Exception exception)
         {
-            _statusLabel.Text = exception.Message;
-            _statusLabel.ForeColor = Color.FromArgb(248, 113, 113);
+            ShowStatus(exception.Message, isError: true);
             _loginButton.Enabled = true;
+            _loginButton.Text = "Try Discord sign-in again  ↗";
         }
+        finally
+        {
+            UseWaitCursor = false;
+        }
+    }
+
+    private sealed class RoundedPanel : Panel
+    {
+        private int _cornerRadius = 8;
+
+        public int CornerRadius
+        {
+            get => _cornerRadius;
+            set
+            {
+                _cornerRadius = value;
+                UpdateRegion();
+                Invalidate();
+            }
+        }
+
+        public Color BorderColor { get; set; } = Color.Transparent;
+
+        protected override void OnSizeChanged(EventArgs eventArgs)
+        {
+            base.OnSizeChanged(eventArgs);
+            UpdateRegion();
+        }
+
+        protected override void OnPaint(PaintEventArgs eventArgs)
+        {
+            base.OnPaint(eventArgs);
+            if (BorderColor == Color.Transparent)
+                return;
+
+            eventArgs.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using var path = CreateRoundedPath(new Rectangle(0, 0, Width - 1, Height - 1), CornerRadius);
+            using var pen = new Pen(BorderColor);
+            eventArgs.Graphics.DrawPath(pen, path);
+        }
+
+        private void UpdateRegion()
+        {
+            if (Width <= 0 || Height <= 0)
+                return;
+
+            using var path = CreateRoundedPath(ClientRectangle, CornerRadius);
+            Region = new Region(path);
+        }
+    }
+
+    private sealed class RoundedButton : Button
+    {
+        private int _cornerRadius = 8;
+        private Color _normalColor;
+
+        public int CornerRadius
+        {
+            get => _cornerRadius;
+            set
+            {
+                _cornerRadius = value;
+                UpdateRegion();
+            }
+        }
+
+        public Color HoverColor { get; set; }
+
+        protected override void OnCreateControl()
+        {
+            base.OnCreateControl();
+            _normalColor = BackColor;
+        }
+
+        protected override void OnSizeChanged(EventArgs eventArgs)
+        {
+            base.OnSizeChanged(eventArgs);
+            UpdateRegion();
+        }
+
+        protected override void OnMouseEnter(EventArgs eventArgs)
+        {
+            base.OnMouseEnter(eventArgs);
+            if (Enabled)
+                BackColor = HoverColor;
+        }
+
+        protected override void OnMouseLeave(EventArgs eventArgs)
+        {
+            base.OnMouseLeave(eventArgs);
+            BackColor = _normalColor;
+        }
+
+        protected override void OnEnabledChanged(EventArgs eventArgs)
+        {
+            base.OnEnabledChanged(eventArgs);
+            BackColor = Enabled ? _normalColor : Color.FromArgb(72, 80, 145);
+        }
+
+        private void UpdateRegion()
+        {
+            if (Width <= 0 || Height <= 0)
+                return;
+
+            using var path = CreateRoundedPath(ClientRectangle, CornerRadius);
+            Region = new Region(path);
+        }
+    }
+
+    private static GraphicsPath CreateRoundedPath(Rectangle bounds, int radius)
+    {
+        var diameter = Math.Max(1, radius * 2);
+        var arc = new Rectangle(bounds.Location, new Size(diameter, diameter));
+        var path = new GraphicsPath();
+        path.AddArc(arc, 180, 90);
+        arc.X = bounds.Right - diameter;
+        path.AddArc(arc, 270, 90);
+        arc.Y = bounds.Bottom - diameter;
+        path.AddArc(arc, 0, 90);
+        arc.X = bounds.Left;
+        path.AddArc(arc, 90, 90);
+        path.CloseFigure();
+        return path;
     }
 }

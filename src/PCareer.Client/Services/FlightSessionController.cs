@@ -122,7 +122,7 @@ public sealed class FlightSessionController
         var payloadTarget = $"{contract.RequiredPayloadKg:0.0} kg";
         if (telemetry is null)
         {
-            return $"Load fuel {fuelTarget} and payload {payloadTarget} (±1%).";
+            return $"Load fuel {fuelTarget} and payload {payloadTarget}.";
         }
 
         if (LoadsMatch(contract, telemetry))
@@ -131,7 +131,7 @@ public sealed class FlightSessionController
         }
 
         return $"Load fuel {fuelTarget} (now {telemetry.FuelTotalKg:0.0} kg) and payload "
-            + $"{payloadTarget} (now {telemetry.PayloadWeightKg:0.0} kg), ±1%.";
+            + $"{payloadTarget} (now {telemetry.PayloadWeightKg:0.0} kg).";
     }
 
     public void Start(Guid flightId, TelemetrySnapshot telemetry)
@@ -285,16 +285,17 @@ public sealed class FlightSessionController
         ContractAssignment contract,
         TelemetrySnapshot telemetry)
     {
-        if (contract.AircraftSimulatorIdentities.Count > 0)
+        if (contract.AircraftSimulatorIdentities.Any(identity =>
+                SimulatorIdentityMatches(identity, telemetry)))
         {
-            return contract.AircraftSimulatorIdentities.Any(identity =>
-                SimulatorIdentityMatches(identity, telemetry));
+            return true;
         }
 
         var expectedIcao = NormalizeAircraftIdentifier(contract.AircraftIcao);
         if (expectedIcao.Length >= 3)
         {
-            var atcModel = NormalizeAircraftIdentifier(telemetry.AircraftAtcModel);
+            var atcModel = NormalizeAircraftIdentifier(
+                SimulatorAircraftIdentity.DecodeAtcModel(telemetry.AircraftAtcModel));
             if (atcModel == expectedIcao || atcModel.StartsWith(expectedIcao, StringComparison.Ordinal))
             {
                 return true;
@@ -305,11 +306,40 @@ public sealed class FlightSessionController
             {
                 return true;
             }
+
+            if (KnownAircraftFamilyMatches(expectedIcao, telemetry))
+            {
+                return true;
+            }
         }
 
         return AircraftNamesMatch(
             contract.RequiredAircraftTitleContains ?? string.Empty,
             telemetry.AircraftTitle);
+    }
+
+    private static bool KnownAircraftFamilyMatches(
+        string expectedIcao,
+        TelemetrySnapshot telemetry)
+    {
+        if (expectedIcao != "A20N")
+        {
+            return false;
+        }
+
+        var atcType = NormalizeAircraftIdentifier(
+            SimulatorAircraftIdentity.DecodeAtcType(telemetry.AircraftAtcType));
+        var atcModel = NormalizeAircraftIdentifier(
+            SimulatorAircraftIdentity.DecodeAtcModel(telemetry.AircraftAtcModel));
+        var title = NormalizeAircraftIdentifier(telemetry.AircraftTitle);
+        var isFlyByWireFamily =
+            title.StartsWith("FBW", StringComparison.Ordinal)
+            || title.StartsWith("FWB", StringComparison.Ordinal)
+            || title.Contains("FLYBYWIRE", StringComparison.Ordinal);
+
+        return atcType.Contains("AIRBUS", StringComparison.Ordinal)
+            && atcModel.StartsWith("A320", StringComparison.Ordinal)
+            && isFlyByWireFamily;
     }
 
     private static bool SimulatorIdentityMatches(
@@ -318,7 +348,8 @@ public sealed class FlightSessionController
     {
         var candidate = identity.IdentityField switch
         {
-            "atc_model" => telemetry.AircraftAtcModel,
+            "atc_model" => SimulatorAircraftIdentity.DecodeAtcModel(
+                telemetry.AircraftAtcModel),
             "title" => telemetry.AircraftTitle,
             _ => string.Empty,
         };

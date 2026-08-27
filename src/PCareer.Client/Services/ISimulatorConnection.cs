@@ -19,5 +19,8 @@ public interface ISimulatorConnection : IDisposable
     void ReceiveMessage();
 
     void RequestAircraftIdentity();
-}
 
+    void SetPayloadKilograms(double payloadKilograms);
+
+    void SetFuelKilograms(double fuelKilograms);
+}
