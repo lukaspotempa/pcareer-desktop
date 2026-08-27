@@ -29,8 +29,8 @@ public sealed class MainForm : Form
         Text = "Virtual Pilot Network";
         Icon = BrandAssets.ApplicationIcon;
         StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(520, 680);
-        Size = new Size(600, 680);
+        MinimumSize = new Size(520, 700);
+        Size = new Size(700, 730);
         BackColor = Palette.AppBackground;
 
         Controls.Add(_web);
@@ -149,8 +149,7 @@ public sealed class MainForm : Form
                 ? "--"
                 : string.IsNullOrWhiteSpace(_latestTelemetry.AircraftAtcModel)
                     ? _latestTelemetry.AircraftTitle
-                    : $"{_latestTelemetry.AircraftTitle}  ·  "
-                        + $"{_latestTelemetry.AircraftAtcType} {_latestTelemetry.AircraftAtcModel}",
+                    : $"{_latestTelemetry.AircraftTitle}", //  »  ATC {_latestTelemetry.AircraftAtcType} {_latestTelemetry.AircraftAtcModel}",
 
             stateText = FlightStatusText(),
             stateDot = _flight.Phase switch
