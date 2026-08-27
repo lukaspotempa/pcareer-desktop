@@ -35,7 +35,7 @@ public sealed class LoginForm : Form
         _card = new RoundedPanel
         {
             Size = new Size(704, 350),
-            BackColor = Color.FromArgb(14, 21, 28),
+            //BackColor = Color.FromArgb(14, 21, 28),
             CornerRadius = 16,
         };
 
@@ -43,7 +43,7 @@ public sealed class LoginForm : Form
         {
             Location = Point.Empty,
             Size = new Size(244, 350),
-            BackColor = Color.FromArgb(14, 21, 28),
+            //BackColor = Color.FromArgb(14, 21, 28),
         };
 
         var logo = new PictureBox
@@ -92,12 +92,12 @@ public sealed class LoginForm : Form
         brandPane.Controls.Add(productName);
         brandPane.Controls.Add(brandDescription);
 
-        var columnDivider = new Panel
+        /*var columnDivider = new Panel
         {
             Location = new Point(244, 0),
             Size = new Size(1, 350),
             BackColor = Palette.BorderHover,
-        };
+        };*/
 
         var title = new Label
         {
@@ -175,7 +175,7 @@ public sealed class LoginForm : Form
         };
 
         _card.Controls.Add(brandPane);
-        _card.Controls.Add(columnDivider);
+        //_card.Controls.Add(columnDivider);
         _card.Controls.Add(title);
         _card.Controls.Add(subtitle);
         _card.Controls.Add(_loginButton);

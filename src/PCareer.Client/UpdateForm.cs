@@ -19,7 +19,7 @@ public sealed class UpdateForm : Form
         MaximizeBox = false;
         MinimizeBox = false;
         ClientSize = new Size(480, 440);
-        BackColor = Color.FromArgb(11, 14, 18);
+        //BackColor = Color.FromArgb(11, 14, 18);
         Controls.Add(_web);
 
         _web.WebMessageReceived += (_, e) => HandleWebMessage(e.WebMessageAsJson);

@@ -129,6 +129,25 @@ Assert(
             aircraftAtcType: "ATCCOM.ATC_NAME AIRBUS.0.text"))
         == "Ready to begin loading.",
     "Localized MSFS identity keys should still match an A20N contract.");
+var fbwPayloadPlan = FlyByWireA32NxLoadPlanner.CreatePayloadPlan(19_218.71);
+Assert(
+    fbwPayloadPlan.PassengersByZone.Sum() <= FlyByWireA32NxLoadPlanner.MaximumPassengers
+        && Math.Abs(
+            fbwPayloadPlan.PassengersByZone.Sum()
+                * FlyByWireA32NxLoadPlanner.PassengerWeightKilograms
+                + fbwPayloadPlan.CargoKilogramsByHold.Sum()
+                - 19_218.71) < 0.01,
+    "The FlyByWire payload plan should preserve the requested total mass.");
+var fbwFuelPlan = FlyByWireA32NxLoadPlanner.CreateFuelPlan(5_000, 6.7);
+Assert(
+    Math.Abs(
+        fbwFuelPlan.CenterGallons
+            + fbwFuelPlan.LeftInnerGallons
+            + fbwFuelPlan.LeftOuterGallons
+            + fbwFuelPlan.RightInnerGallons
+            + fbwFuelPlan.RightOuterGallons
+            - fbwFuelPlan.TotalGallons) < 0.01,
+    "The FlyByWire fuel plan should preserve the requested total volume.");
 Assert(
     controller.EvaluateReadiness(
         true,

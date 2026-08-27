@@ -95,6 +95,12 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
         public string AircraftAtcModel;
     }
 
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    private struct Float64WriteData
+    {
+        public double Value;
+    }
+
     private SimConnect? _simConnect;
     private int _payloadStationCount;
     private double _fuelWeightPerGallonPounds;
@@ -102,6 +108,9 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
     private readonly double[] _modernFuelTankCapacities = new double[20];
     private readonly double[] _legacyFuelTankCapacities = new double[11];
     private readonly HashSet<int> _definedWriteDefinitions = [];
+    private string _aircraftTitle = string.Empty;
+    private string _aircraftAtcModel = string.Empty;
+    private string _aircraftAtcType = string.Empty;
 
     public bool IsConnected { get; private set; }
 
@@ -350,6 +359,12 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
                 "Payload must be a non-negative weight.");
         }
 
+        if (IsFlyByWireA32Nx())
+        {
+            SetFlyByWirePayload(connection, payloadKilograms);
+            return;
+        }
+
         var stationCount = Math.Clamp(_payloadStationCount, 0, 15);
         if (stationCount == 0)
         {
@@ -378,6 +393,11 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
             throw new ArgumentOutOfRangeException(
                 nameof(fuelKilograms),
                 "Fuel must be a non-negative weight.");
+        }
+        if (IsFlyByWireA32Nx())
+        {
+            SetFlyByWireFuel(connection, fuelKilograms);
+            return;
         }
         if (_fuelWeightPerGallonPounds <= 0)
         {
@@ -464,13 +484,105 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
         if (_definedWriteDefinitions.Add(definitionId))
         {
             AddFloat64(connection, definition, name, units);
+            connection.RegisterDataDefineStruct<Float64WriteData>(definition);
         }
 
         connection.SetDataOnSimObject(
             definition,
             SimConnect.SIMCONNECT_OBJECT_ID_USER,
             SIMCONNECT_DATA_SET_FLAG.DEFAULT,
-            value);
+            new Float64WriteData { Value = value });
+    }
+
+    private bool IsFlyByWireA32Nx()
+    {
+        var title = string.Concat(_aircraftTitle.Where(char.IsLetterOrDigit)).ToUpperInvariant();
+        var atcModel = string.Concat(_aircraftAtcModel.Where(char.IsLetterOrDigit)).ToUpperInvariant();
+        var atcType = string.Concat(_aircraftAtcType.Where(char.IsLetterOrDigit)).ToUpperInvariant();
+        return atcModel == "A20N"
+            && atcType.Contains("AIRBUS", StringComparison.Ordinal)
+            && (title.StartsWith("FBW", StringComparison.Ordinal)
+                || title.StartsWith("FWB", StringComparison.Ordinal)
+                || title.Contains("FLYBYWIRE", StringComparison.Ordinal));
+    }
+
+    private void SetFlyByWirePayload(SimConnect connection, double payloadKilograms)
+    {
+        var plan = FlyByWireA32NxLoadPlanner.CreatePayloadPlan(payloadKilograms);
+        string[] passengerVariables =
+        [
+            "L:A32NX_PAX_A_DESIRED",
+            "L:A32NX_PAX_B_DESIRED",
+            "L:A32NX_PAX_C_DESIRED",
+            "L:A32NX_PAX_D_DESIRED",
+        ];
+        for (var zone = 0; zone < passengerVariables.Length; zone++)
+        {
+            var occupiedSeatFlags = plan.PassengersByZone[zone] == 0
+                ? 0d
+                : (double)((1L << plan.PassengersByZone[zone]) - 1L);
+            SetWritableValue(
+                connection,
+                400 + zone,
+                passengerVariables[zone],
+                "number",
+                occupiedSeatFlags);
+        }
+
+        string[] cargoVariables =
+        [
+            "L:A32NX_CARGO_FWD_BAGGAGE_CONTAINER_DESIRED",
+            "L:A32NX_CARGO_AFT_CONTAINER_DESIRED",
+            "L:A32NX_CARGO_AFT_BAGGAGE_DESIRED",
+            "L:A32NX_CARGO_AFT_BULK_LOOSE_DESIRED",
+        ];
+        for (var hold = 0; hold < cargoVariables.Length; hold++)
+        {
+            SetWritableValue(
+                connection,
+                410 + hold,
+                cargoVariables[hold],
+                "kilograms",
+                plan.CargoKilogramsByHold[hold]);
+        }
+
+        SetWritableValue(
+            connection,
+            420,
+            "L:A32NX_WB_PER_PAX_WEIGHT",
+            "kilograms",
+            FlyByWireA32NxLoadPlanner.PassengerWeightKilograms);
+        SetWritableValue(connection, 421, "L:A32NX_BOARDING_RATE", "number", 0d);
+        SetWritableValue(connection, 422, "L:A32NX_BOARDING_STARTED_BY_USR", "bool", 1d);
+    }
+
+    private void SetFlyByWireFuel(SimConnect connection, double fuelKilograms)
+    {
+        var plan = FlyByWireA32NxLoadPlanner.CreateFuelPlan(
+            fuelKilograms,
+            _fuelWeightPerGallonPounds);
+        (string Name, double Value)[] values =
+        [
+            ("L:A32NX_FUEL_TOTAL_DESIRED", plan.TotalGallons),
+            ("L:A32NX_FUEL_DESIRED_PERCENT",
+                plan.TotalGallons / FlyByWireA32NxLoadPlanner.MaximumFuelGallons * 100d),
+            ("L:A32NX_FUEL_CENTER_DESIRED", plan.CenterGallons),
+            ("L:A32NX_FUEL_LEFT_MAIN_DESIRED", plan.LeftInnerGallons),
+            ("L:A32NX_FUEL_LEFT_AUX_DESIRED", plan.LeftOuterGallons),
+            ("L:A32NX_FUEL_RIGHT_MAIN_DESIRED", plan.RightInnerGallons),
+            ("L:A32NX_FUEL_RIGHT_AUX_DESIRED", plan.RightOuterGallons),
+            ("L:A32NX_EFB_REFUEL_RATE_SETTING", 2d),
+            ("L:A32NX_REFUEL_STARTED_BY_USR", 1d),
+        ];
+        for (var index = 0; index < values.Length; index++)
+        {
+            SetWritableValue(
+                connection,
+                430 + index,
+                values[index].Name,
+                "number",
+                values[index].Value);
+        }
     }
 
     private void OnSimObjectData(SimConnect sender, SIMCONNECT_RECV_SIMOBJECT_DATA data)
@@ -493,6 +605,9 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
 
     private void PublishTelemetry(UserAircraftData sample)
     {
+        _aircraftTitle = sample.AircraftTitle?.TrimEnd('\0') ?? string.Empty;
+        _aircraftAtcModel = SimulatorAircraftIdentity.DecodeAtcModel(sample.AircraftAtcModel);
+        _aircraftAtcType = SimulatorAircraftIdentity.DecodeAtcType(sample.AircraftAtcType);
         _payloadStationCount = sample.PayloadStationCount;
         _fuelWeightPerGallonPounds = sample.FuelWeightPerGallonPounds;
         _usesModernFuelSystem = sample.NewFuelSystem != 0;
@@ -591,6 +706,9 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
         _payloadStationCount = 0;
         _fuelWeightPerGallonPounds = 0;
         _usesModernFuelSystem = false;
+        _aircraftTitle = string.Empty;
+        _aircraftAtcModel = string.Empty;
+        _aircraftAtcType = string.Empty;
         Array.Clear(_modernFuelTankCapacities);
         Array.Clear(_legacyFuelTankCapacities);
         _definedWriteDefinitions.Clear();

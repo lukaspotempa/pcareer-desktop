@@ -23,8 +23,8 @@ html,body{height:100%;background:var(--bg);color:var(--text);
   font-family:'Inter','Segoe UI',system-ui,sans-serif;font-size:14px;line-height:1.5}
 body{display:flex;align-items:center;justify-content:center;padding:24px}
 
-.card{width:100%;max-width:420px;border:1px solid var(--border);border-radius:var(--radius);
-  background:var(--surface);padding:36px 32px;text-align:center}
+.card{width:100%;max-width:420px;/*border:1px solid var(--border);*/border-radius:var(--radius);
+  /*background:var(--surface);*/padding:36px 32px;text-align:center}
 
 /* logo */
 .logo{width:72px;height:72px;margin:0 auto 20px;display:grid;place-items:center}
