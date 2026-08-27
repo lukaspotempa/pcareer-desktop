@@ -1,75 +1,51 @@
 # Virtual Pilot Network Desktop
 
-Windows companion application for the Virtual Pilot Network career platform and
-Microsoft Flight Simulator 2024. It connects to MSFS through SimConnect,
-authenticates through Discord, loads the player's active contract, and reports
-flight telemetry to the Virtual Pilot Network server.
+Virtual Pilot Network Desktop connects Microsoft Flight Simulator 2024 to the
+Virtual Pilot Network career platform. It validates the selected aircraft and
+departure, tracks the active flight, and reports flight progress to the server.
 
-## Features
+## Getting started
 
-- Simulator connection and live aircraft telemetry
-- Discord sign-in through the system browser
-- Contract and aircraft validation before departure
-- Local flight lifecycle and rule enforcement
-- Portable, self-updating Windows executable
-- No installer or automatically-created shortcuts
+1. Download `VirtualPilotNetwork.exe` from the
+   [latest release](https://github.com/lukaspotempa/pcareer-desktop/releases/latest).
+2. Save it somewhere you can write to, such as a personal applications folder.
+   This allows automatic updates to replace the executable.
+3. Accept a contract on the
+   [Virtual Pilot Network website](https://career.virtual-pilot.com/).
+4. Start Microsoft Flight Simulator 2024 and load into the assigned aircraft at
+   the departure airport.
+5. Launch `VirtualPilotNetwork.exe` and sign in with Discord.
+6. Wait for the simulator and contract checks to show ready, then select
+   **Start flight**.
+7. After landing at the destination, select **Finish flight**.
 
-## Download
+## Automatic updates
 
-Download `VirtualPilotNetwork.exe` from the
-[latest release](https://github.com/lukaspotempa/pcareer-desktop/releases/latest).
-Keep it in a user-writable location so it can replace itself during updates.
+The application checks for updates when it starts. When a new version is
+available, it downloads the replacement, verifies its SHA-256 checksum, updates
+itself, and restarts. If the update service is temporarily unavailable, you can
+continue offline or download the latest executable manually.
 
-Requirements: Windows x64, Microsoft Flight Simulator 2024, and the Microsoft
-Edge WebView2 Runtime.
+## Requirements
 
-## Build
+- Windows x64
+- Microsoft Flight Simulator 2024
+- Microsoft Edge WebView2 Runtime
+- Internet access for sign-in, contracts, telemetry, and updates
 
-Building requires the .NET 8 SDK and the Microsoft Flight Simulator 2024 SDK.
-Run this from the repository root:
+## Troubleshooting
 
-```powershell
-.\scripts\build.ps1 `
-  -SimConnectDll "<MSFS SDK>\SimConnect SDK\lib\managed\Microsoft.FlightSimulator.SimConnect.dll" `
-  -RequireSimConnect `
-  -SelfContained
-```
-
-The portable executable is written to
-`dist\PCareer.Client\VirtualPilotNetwork.exe`.
-
-Run all local checks with:
-
-```powershell
-.\scripts\test.ps1
-```
-
-## Release
-
-Set a GitHub token with repository `Contents: read and write` permission, then
-publish a version newer than the current release:
-
-```powershell
-$env:GITHUB_TOKEN = "<token>"
-
-.\scripts\release.ps1 `
-  -Version "0.0.3" `
-  -SimConnectDll "<MSFS SDK>\SimConnect SDK\lib\managed\Microsoft.FlightSimulator.SimConnect.dll"
-```
-
-The release contains the user-facing executable and a small checksum manifest
-used by the automatic updater. The repository and release assets must remain
-publicly accessible for unauthenticated update checks.
-
-## Security
-
-Please report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
-Never include access tokens, credentials, or private user data in a public issue.
+- **Simulator not connected:** Start MSFS 2024 and finish loading into a flight.
+- **No active contract:** Accept a contract on the website, then refresh it in
+  the desktop application.
+- **WebView2 initialization error:** Install or repair the
+  [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/).
+- **Update check failed:** Verify GitHub is reachable, continue offline, or
+  download the latest release manually.
 
 ## License
 
-Copyright © 2026 Lukas Potempa. All rights reserved.
-
-This source is publicly visible for review, but it is not open-source software.
-Copying, modification, redistribution, sublicensing, and commercial use are not
-permitted without prior written authorization. See [LICENSE](LICENSE).
+Virtual Pilot Network Desktop is open-source software licensed under the
+[Mozilla Public License 2.0](LICENSE). Changes to MPL-covered source files must
+remain available under the MPL when distributed. Microsoft components used by
+the application remain subject to their own license terms; see [NOTICE](NOTICE).

@@ -1,0 +1,9 @@
+Virtual Pilot Network Desktop
+Copyright (c) 2026 Lukas Potempa
+
+This project is licensed under the Mozilla Public License, version 2.0.
+
+The application uses Microsoft Edge WebView2 and Microsoft Flight Simulator
+SimConnect components. Those third-party components and trademarks are owned by
+their respective owners and remain subject to their own license terms. They are
+not relicensed under the Mozilla Public License by this project.

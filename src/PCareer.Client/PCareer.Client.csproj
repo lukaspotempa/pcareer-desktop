@@ -14,6 +14,10 @@
     <NoWarn>$(NoWarn);MSB3277</NoWarn>
     <Version>1.0.0</Version>
     <AssemblyName>VirtualPilotNetwork</AssemblyName>
+    <Authors>Lukas Potempa</Authors>
+    <Description>Microsoft Flight Simulator 2024 companion for Virtual Pilot Network.</Description>
+    <PackageLicenseExpression>MPL-2.0</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/lukaspotempa/pcareer-desktop</RepositoryUrl>
   </PropertyGroup>
 
   <PropertyGroup Condition="Exists('$(SimConnectAssemblyPath)')">
