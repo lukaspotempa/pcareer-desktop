@@ -49,6 +49,14 @@ AssertThrows<InvalidDataException>(
 var controller = new FlightSessionController();
 var contract = ContractAssignment.DevelopmentFlight;
 var onGround = Sample(onGround: true, altitudeAgl: 5);
+var normalizedForServer = PCareerApiClient.NormalizeTelemetryForServer(onGround);
+var serverDerivedPayloadKg =
+    (normalizedForServer.TotalWeightPounds - normalizedForServer.EmptyWeightPounds)
+    * 0.45359237
+    - normalizedForServer.FuelTotalKg;
+Assert(
+    Math.Abs(serverDerivedPayloadKg - onGround.PayloadWeightKg) < 0.001,
+    "Legacy servers must derive the same payload total reported by the payload stations.");
 
 Assert(
     controller.EvaluateReadiness(true, contract, onGround) == "Ready to begin loading.",
@@ -238,12 +246,44 @@ Assert(cancellation?.Contains("Fuel was increased") == true, "Refuelling an acti
 Assert(controller.Phase == FlightPhase.Cancelled, "A load violation must enter Cancelled.");
 controller.ResetCancelledFlight();
 Assert(controller.Phase == FlightPhase.Ready, "A cancelled session must be resettable.");
+var restoredController = new FlightSessionController();
+var restoredFlightId = Guid.NewGuid();
+restoredController.Restore(
+    new ActiveFlightSession(
+        restoredFlightId,
+        contract.ContractId,
+        DateTimeOffset.UtcNow.AddMinutes(-20),
+        HasAirborneTelemetry: true),
+    onGround);
+Assert(
+    restoredController.FlightId == restoredFlightId
+        && restoredController.Phase == FlightPhase.Landed
+        && restoredController.CanFinish,
+    "A restarted client must restore an airborne flight that is now on the ground.");
 controller.BeginLoading();
 controller.Start(Guid.NewGuid(), onGround);
 var jumped = controller.Observe(onGround with { LatitudeDegrees = 53.3667 });
 Assert(
     jumped?.Contains("position changed discontinuously") == true,
     "Reloading at another location must cancel the active flight.");
+
+var resumedController = new FlightSessionController();
+var beforeTelemetryGap = onGround with
+{
+    OnGround = false,
+    GroundSpeedKnots = 250,
+    IndicatedAirspeedKnots = 245,
+};
+resumedController.BeginLoading();
+resumedController.Start(Guid.NewGuid(), beforeTelemetryGap);
+var afterTelemetryGap = beforeTelemetryGap with
+{
+    ObservedAt = beforeTelemetryGap.ObservedAt.AddMinutes(2),
+    LatitudeDegrees = beforeTelemetryGap.LatitudeDegrees + 0.2,
+};
+Assert(
+    resumedController.Observe(afterTelemetryGap) is null,
+    "Plausible movement after a telemetry interruption must not cancel the flight.");
 
 var payloadTelemetry = Sample(onGround: true, altitudeAgl: 5);
 var payloadController = new FlightSessionController();

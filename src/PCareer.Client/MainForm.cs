@@ -19,6 +19,8 @@ public sealed class MainForm : Form
 
     private TelemetrySnapshot? _latestTelemetry;
     private ContractAssignment? _contract;
+    private ActiveFlightSession? _pendingActiveFlight;
+    private bool _recoveringFlightState = true;
     private int _activationInProgress;
     private int _cancellationInProgress;
 
@@ -87,7 +89,7 @@ public sealed class MainForm : Form
         }
         TryConnect();
         _retryTimer.Start();
-        _ = LoadActiveContractAsync();
+        _ = InitializeFlightStateAsync();
     }
 
     protected override void WndProc(ref Message message)
@@ -244,6 +246,49 @@ public sealed class MainForm : Form
         }
     }
 
+    private async Task InitializeFlightStateAsync()
+    {
+        try
+        {
+            await LoadActiveContractAsync();
+            var activeFlight = await _serverClient.GetActiveFlightAsync();
+            if (activeFlight is null)
+            {
+                return;
+            }
+
+            if (_contract is null
+                || !string.Equals(
+                    _contract.ContractId,
+                    activeFlight.ContractId,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                await _serverClient.CancelFlightAsync(
+                    activeFlight.FlightId,
+                    "The associated contract is no longer active.");
+                _telemetryServerLabel.Text = "Removed a stale active flight session.";
+                return;
+            }
+
+            _pendingActiveFlight = activeFlight;
+            if (_latestTelemetry is not null)
+            {
+                RestoreActiveFlight(_latestTelemetry);
+            }
+        }
+        catch (Exception exception)
+        {
+            _telemetryServerLabel.Text =
+                $"Could not recover the previous flight session: {exception.Message}";
+        }
+        finally
+        {
+            _recoveringFlightState = false;
+            UpdateReadiness();
+            SendStateToJS();
+        }
+    }
+
     // ── Telemetry ────────────────────────────────────────────────────────
 
     private void ServerTelemetryStatusChanged(object? sender, string statusMessage)
@@ -259,6 +304,7 @@ public sealed class MainForm : Form
     private void ReceiveTelemetry(TelemetrySnapshot telemetry)
     {
         _latestTelemetry = telemetry;
+        RestoreActiveFlight(telemetry);
         var cancellationReason = _flight.Observe(telemetry);
         if (cancellationReason is not null)
         {
@@ -303,6 +349,14 @@ public sealed class MainForm : Form
 
     private void UpdateReadiness()
     {
+        if (_recoveringFlightState)
+        {
+            _readinessLabel.Text = "Checking for an active flight session.";
+            _readinessLabel.ForeColor = Palette.StatusWarn;
+            _startButton.Enabled = false;
+            return;
+        }
+
         if (_contract is null)
         {
             _readinessLabel.Text = "Accept a contract on the website before starting a flight.";
@@ -319,6 +373,20 @@ public sealed class MainForm : Form
         _readinessLabel.Text = readiness;
         _readinessLabel.ForeColor = ready ? Palette.StatusOk : Palette.StatusWarn;
         _startButton.Enabled = ready;
+    }
+
+    private void RestoreActiveFlight(TelemetrySnapshot telemetry)
+    {
+        if (_pendingActiveFlight is not ActiveFlightSession activeFlight
+            || _flight.Phase is not FlightPhase.Ready)
+        {
+            return;
+        }
+
+        _flight.Restore(activeFlight, telemetry);
+        _pendingActiveFlight = null;
+        _flightStatusLabel.Text = FlightStatusText();
+        _finishButton.Enabled = _flight.CanFinish;
     }
 
     // ── Actions ──────────────────────────────────────────────────────────

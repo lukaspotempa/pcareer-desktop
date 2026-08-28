@@ -131,12 +131,35 @@ public sealed class PCareerApiClient : IFlightServerClient, IDisposable
             () => JsonRequest(
                 HttpMethod.Post,
                 "api/desktop/flights/start",
-                new { contract_id = contract.ContractId, telemetry = initialTelemetry }),
+                new
+                {
+                    contract_id = contract.ContractId,
+                    telemetry = NormalizeTelemetryForServer(initialTelemetry),
+                }),
             cancellationToken);
         var flight = await ReadRequiredAsync<FlightDto>(response, cancellationToken);
         _lastTelemetryQueuedAt = DateTimeOffset.UtcNow;
         TelemetryStatusChanged?.Invoke(this, "Initial telemetry accepted by server.");
         return Guid.Parse(flight.FlightId);
+    }
+
+    public async Task<ActiveFlightSession?> GetActiveFlightAsync(
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await SendAuthenticatedAsync(
+            () => new HttpRequestMessage(HttpMethod.Get, "api/desktop/flights/active"),
+            cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NoContent)
+        {
+            return null;
+        }
+
+        var flight = await ReadRequiredAsync<FlightDto>(response, cancellationToken);
+        return new ActiveFlightSession(
+            Guid.Parse(flight.FlightId),
+            flight.ContractId,
+            flight.StartedAt,
+            flight.HasAirborneTelemetry);
     }
 
     public void QueueTelemetry(Guid flightId, TelemetrySnapshot telemetry)
@@ -161,7 +184,7 @@ public sealed class PCareerApiClient : IFlightServerClient, IDisposable
             () => JsonRequest(
                 HttpMethod.Post,
                 $"api/desktop/flights/{flightId}/finish",
-                finalTelemetry),
+                NormalizeTelemetryForServer(finalTelemetry)),
             cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
         TelemetryStatusChanged?.Invoke(this, "Flight completed and confirmed by server.");
@@ -211,7 +234,7 @@ public sealed class PCareerApiClient : IFlightServerClient, IDisposable
                 () => JsonRequest(
                     HttpMethod.Post,
                     $"api/desktop/flights/{flightId}/telemetry",
-                    telemetry),
+                    NormalizeTelemetryForServer(telemetry)),
                 CancellationToken.None);
             await EnsureSuccessAsync(response, CancellationToken.None);
             TelemetryStatusChanged?.Invoke(
@@ -301,6 +324,18 @@ public sealed class PCareerApiClient : IFlightServerClient, IDisposable
 
     private HttpRequestMessage JsonRequest(HttpMethod method, string path, object value) =>
         new(method, path) { Content = JsonContent.Create(value, options: _json) };
+
+    internal static TelemetrySnapshot NormalizeTelemetryForServer(
+        TelemetrySnapshot telemetry)
+    {
+        const double poundsPerKilogram = 2.20462262185d;
+        var normalizedEmptyWeightPounds = telemetry.TotalWeightPounds
+            - (telemetry.FuelTotalKg + telemetry.PayloadWeightKg) * poundsPerKilogram;
+        return double.IsFinite(normalizedEmptyWeightPounds)
+            && normalizedEmptyWeightPounds >= 0
+            ? telemetry with { EmptyWeightPounds = normalizedEmptyWeightPounds }
+            : telemetry;
+    }
 
     private async Task<T> ReadRequiredAsync<T>(
         HttpResponseMessage response,
@@ -401,7 +436,11 @@ public sealed class PCareerApiClient : IFlightServerClient, IDisposable
         string MatchMode,
         string MatchValue);
 
-    private sealed record FlightDto(string FlightId);
+    private sealed record FlightDto(
+        string FlightId,
+        string ContractId,
+        DateTimeOffset StartedAt,
+        bool HasAirborneTelemetry = false);
 
     private sealed record TransmissionDto(
         string Status,

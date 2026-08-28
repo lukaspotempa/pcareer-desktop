@@ -149,6 +149,27 @@ public sealed class FlightSessionController
         Phase = FlightPhase.Started;
     }
 
+    public void Restore(
+        ActiveFlightSession activeFlight,
+        TelemetrySnapshot telemetry)
+    {
+        if (Phase is not FlightPhase.Ready)
+        {
+            throw new InvalidOperationException("A flight session is already active.");
+        }
+
+        FlightId = activeFlight.FlightId;
+        StartedAt = activeFlight.StartedAt;
+        InitialFuelKg = telemetry.FuelTotalKg;
+        InitialPayloadKg = telemetry.PayloadWeightKg;
+        _previousTelemetry = telemetry;
+        Phase = telemetry.OnGround
+            ? activeFlight.HasAirborneTelemetry
+                ? FlightPhase.Landed
+                : FlightPhase.Started
+            : FlightPhase.Airborne;
+    }
+
     public string? Observe(TelemetrySnapshot telemetry)
     {
         if (Phase is not (FlightPhase.Started or FlightPhase.Airborne or FlightPhase.Landed))
@@ -246,7 +267,10 @@ public sealed class FlightSessionController
         }
 
         var elapsed = telemetry.ObservedAt - _previousTelemetry.ObservedAt;
-        var seconds = Math.Clamp(elapsed.TotalSeconds, 0, 30);
+        // A SimConnect interruption or desktop-client pause can leave a legitimate
+        // gap longer than 30 seconds. Use the real simulator observation interval;
+        // capping it made normal in-flight movement look like a position jump.
+        var seconds = Math.Max(elapsed.TotalSeconds, 0);
         var plausibleDistance = Math.Max(
             5,
             Math.Max(telemetry.GroundSpeedKnots, _previousTelemetry.GroundSpeedKnots)
