@@ -285,6 +285,15 @@ Assert(
     resumedController.Observe(afterTelemetryGap) is null,
     "Plausible movement after a telemetry interruption must not cancel the flight.");
 
+resumedController.MarkServerSessionLost();
+Assert(
+    resumedController.Phase == FlightPhase.Cancelled && !resumedController.CanFinish,
+    "A missing server session must immediately disable local flight completion.");
+resumedController.ResetCancelledFlight();
+Assert(
+    resumedController.Phase == FlightPhase.Ready && resumedController.FlightId is null,
+    "A lost server session must be resettable without restarting the desktop app.");
+
 var payloadTelemetry = Sample(onGround: true, altitudeAgl: 5);
 var payloadController = new FlightSessionController();
 payloadController.BeginLoading();

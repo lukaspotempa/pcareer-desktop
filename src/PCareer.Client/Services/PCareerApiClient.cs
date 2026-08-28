@@ -17,6 +17,7 @@ public sealed class PCareerApiClient : IFlightServerClient, IDisposable
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
     private DesktopSession? _session;
     private DateTimeOffset _lastTelemetryQueuedAt = DateTimeOffset.MinValue;
+    private string? _lastTelemetryRejection;
     private int _telemetryUploadInProgress;
 
     public PCareerApiClient(Uri serverBaseUri)
@@ -29,6 +30,8 @@ public sealed class PCareerApiClient : IFlightServerClient, IDisposable
     }
 
     public event EventHandler<string>? TelemetryStatusChanged;
+
+    public event EventHandler<TelemetryRejectedEventArgs>? TelemetryRejected;
 
     public DesktopSession? Session => _session;
 
@@ -237,6 +240,7 @@ public sealed class PCareerApiClient : IFlightServerClient, IDisposable
                     NormalizeTelemetryForServer(telemetry)),
                 CancellationToken.None);
             await EnsureSuccessAsync(response, CancellationToken.None);
+            _lastTelemetryRejection = null;
             TelemetryStatusChanged?.Invoke(
                 this,
                 $"Telemetry sent {DateTimeOffset.Now:HH:mm:ss} · next ping in 5 seconds.");
@@ -244,6 +248,25 @@ public sealed class PCareerApiClient : IFlightServerClient, IDisposable
         catch (Exception exception)
         {
             TelemetryStatusChanged?.Invoke(this, $"Telemetry upload failed: {exception.Message}");
+            if (exception is HttpRequestException
+                {
+                    StatusCode: HttpStatusCode.Conflict or HttpStatusCode.NotFound
+                } requestException)
+            {
+                var rejectionKey = $"{requestException.StatusCode}:{requestException.Message}";
+                if (!string.Equals(
+                    rejectionKey,
+                    _lastTelemetryRejection,
+                    StringComparison.Ordinal))
+                {
+                    _lastTelemetryRejection = rejectionKey;
+                    TelemetryRejected?.Invoke(
+                        this,
+                        new TelemetryRejectedEventArgs(
+                            requestException.StatusCode.Value,
+                            requestException.Message));
+                }
+            }
         }
         finally
         {

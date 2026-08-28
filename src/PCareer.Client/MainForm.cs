@@ -47,6 +47,7 @@ public sealed class MainForm : Form
         _simulator.AircraftIdentityReceived += (_, snapshot) =>
             BeginInvoke(() => _ = UploadAircraftSnapshotAsync(snapshot));
         _serverClient.TelemetryStatusChanged += ServerTelemetryStatusChanged;
+        _serverClient.TelemetryRejected += ServerTelemetryRejected;
         FormClosed += (_, _) => _simulator.Dispose();
 
         _finishButton.Enabled = false;
@@ -299,6 +300,49 @@ public sealed class MainForm : Form
             _telemetryServerLabel.Text = statusMessage;
             SendStateToJS();
         });
+    }
+
+    private void ServerTelemetryRejected(
+        object? sender,
+        TelemetryRejectedEventArgs rejection)
+    {
+        if (IsDisposed) return;
+        BeginInvoke(() => _ = HandleServerTelemetryRejectionAsync(rejection));
+    }
+
+    private async Task HandleServerTelemetryRejectionAsync(
+        TelemetryRejectedEventArgs rejection)
+    {
+        if (rejection.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            if (_flight.FlightId is null)
+            {
+                return;
+            }
+
+            _flight.MarkServerSessionLost();
+            _finishButton.Enabled = false;
+            MessageBox.Show(
+                this,
+                "The server no longer has this flight session, so local tracking has stopped.\n\n"
+                    + rejection.Message,
+                "Flight tracking stopped",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+            _flight.ResetCancelledFlight();
+            _contract = null;
+            await LoadActiveContractAsync();
+            return;
+        }
+
+        MessageBox.Show(
+            this,
+            "The server rejected a telemetry sample. The flight remains active and tracking "
+                + "will retry automatically.\n\n"
+                + rejection.Message,
+            "Telemetry rejected",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Warning);
     }
 
     private void ReceiveTelemetry(TelemetrySnapshot telemetry)

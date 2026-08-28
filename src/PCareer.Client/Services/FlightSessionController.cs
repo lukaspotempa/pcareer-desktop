@@ -212,6 +212,14 @@ public sealed class FlightSessionController
         Phase = FlightPhase.Finished;
     }
 
+    public void MarkServerSessionLost()
+    {
+        if (Phase is FlightPhase.Started or FlightPhase.Airborne or FlightPhase.Landed)
+        {
+            Phase = FlightPhase.Cancelled;
+        }
+    }
+
     public void ResetForNextFlight()
     {
         if (Phase is not FlightPhase.Finished)
