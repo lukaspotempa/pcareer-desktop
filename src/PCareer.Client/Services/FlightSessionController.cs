@@ -4,6 +4,10 @@ namespace PCareer.Client.Services;
 
 public sealed class FlightSessionController
 {
+    private const double MinimumLiftoffAltitudeAglFeet = 150d;
+
+    private const double LandedAltitudeAglCeilingFeet = 100d;
+
     private static readonly HashSet<string> IgnoredAircraftNameTokens = new(
         new[]
         {
@@ -170,7 +174,9 @@ public sealed class FlightSessionController
             ? activeFlight.HasAirborneTelemetry
                 ? FlightPhase.Landed
                 : FlightPhase.Started
-            : FlightPhase.Airborne;
+            : telemetry.AltitudeAglFeet >= MinimumLiftoffAltitudeAglFeet
+                ? FlightPhase.Airborne
+                : FlightPhase.Started;
     }
 
     public string? Observe(TelemetrySnapshot telemetry)
@@ -187,14 +193,16 @@ public sealed class FlightSessionController
             return cancellationReason;
         }
 
-        if (Phase is FlightPhase.Started && !telemetry.OnGround)
+        if (Phase is FlightPhase.Started
+            && !telemetry.OnGround
+            && telemetry.AltitudeAglFeet >= MinimumLiftoffAltitudeAglFeet)
         {
             Phase = FlightPhase.Airborne;
         }
         else if (
             Phase is FlightPhase.Airborne
             && telemetry.OnGround
-            && telemetry.AltitudeAglFeet < 100)
+            && telemetry.AltitudeAglFeet < LandedAltitudeAglCeilingFeet)
         {
             Phase = FlightPhase.Landed;
         }

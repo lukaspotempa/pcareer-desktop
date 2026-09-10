@@ -290,6 +290,31 @@ Assert(
     jumped?.Contains("position changed discontinuously") == true,
     "Reloading at another location must cancel the active flight.");
 
+var groundFlickerController = new FlightSessionController();
+groundFlickerController.BeginLoading();
+groundFlickerController.Start(Guid.NewGuid(), onGround);
+var groundFlicker = onGround with { OnGround = false, AltitudeAglFeet = 8 };
+groundFlickerController.Observe(groundFlicker);
+Assert(
+    groundFlickerController.Phase == FlightPhase.Started,
+    "A momentary off-ground reading below liftoff altitude must not enter Airborne.");
+groundFlickerController.Observe(onGround);
+Assert(
+    groundFlickerController.Phase == FlightPhase.Started
+        && !groundFlickerController.CanFinish,
+    "Returning to the ground without a real takeoff must not enter Landed.");
+var restoredFlickerController = new FlightSessionController();
+restoredFlickerController.Restore(
+    new ActiveFlightSession(
+        Guid.NewGuid(),
+        contract.ContractId,
+        DateTimeOffset.UtcNow.AddMinutes(-5),
+        HasAirborneTelemetry: true),
+    groundFlicker);
+Assert(
+    restoredFlickerController.Phase == FlightPhase.Started,
+    "A restored off-ground reading below liftoff altitude must not be treated as airborne.");
+
 var resumedController = new FlightSessionController();
 var beforeTelemetryGap = onGround with
 {
