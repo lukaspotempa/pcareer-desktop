@@ -10,6 +10,8 @@ public interface ISimulatorConnection : IDisposable
 
     string StatusMessage { get; }
 
+    IReadOnlyList<string> MissionDiagnostics { get; }
+
     event EventHandler? ConnectionChanged;
 
     event EventHandler<TelemetrySnapshot>? TelemetryReceived;
@@ -22,8 +24,11 @@ public interface ISimulatorConnection : IDisposable
 
     void RequestAircraftIdentity();
 
+    Task<string> ResolveGroundObjectTitleAsync(string objectType, string preferredTitle);
+
     Task<uint> SpawnGroundObjectAsync(
         string containerTitle,
+        string? liveryName,
         double latitudeDegrees,
         double longitudeDegrees,
         double altitudeFeet,
@@ -33,9 +38,11 @@ public interface ISimulatorConnection : IDisposable
 
     void FreezeGroundObject(uint objectId);
 
-    void SetUserAircraftPosition(MissionTeleport position);
+    Task SetUserAircraftPositionAsync(MissionTeleport position);
 
     void SetMissionCamera(MissionCamera camera);
+
+    void ReleaseMissionCamera();
 
     void SetPayloadKilograms(double payloadKilograms);
 

@@ -43,7 +43,8 @@ public sealed record MissionGroundObject(
     string Title,
     MissionPosition Position,
     double HeadingDegrees,
-    bool Freeze);
+    bool Freeze,
+    string? LiveryName = null);
 
 public sealed record MissionPosition(double Lat, double Lon, double AltM);
 
@@ -56,7 +57,7 @@ public sealed record MissionPhase(
     double? DurationSec,
     string? DialogId,
     MissionCamera? Camera,
-    MissionTeleport? Teleport,
+    MissionTeleport? DebugTeleport,
     IReadOnlyList<string> ObjectIds);
 
 public sealed record MissionWaypoint(double Lat, double Lon);

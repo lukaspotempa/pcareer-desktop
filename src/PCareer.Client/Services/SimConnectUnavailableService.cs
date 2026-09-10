@@ -11,6 +11,8 @@ internal sealed class SimConnectUnavailableService : ISimulatorConnection
     public string StatusMessage =>
         "SimConnect support was not included in this build. Install the MSFS 2024 SDK and rebuild.";
 
+    public IReadOnlyList<string> MissionDiagnostics => [];
+
     public event EventHandler? ConnectionChanged;
 
     public event EventHandler<TelemetrySnapshot>? TelemetryReceived
@@ -36,8 +38,12 @@ internal sealed class SimConnectUnavailableService : ISimulatorConnection
         throw new InvalidOperationException(
             "SimConnect support was not included in this build. Install the MSFS 2024 SDK and rebuild.");
 
+    public Task<string> ResolveGroundObjectTitleAsync(string objectType, string preferredTitle) =>
+        Task.FromException<string>(new InvalidOperationException(StatusMessage));
+
     public Task<uint> SpawnGroundObjectAsync(
         string containerTitle,
+        string? liveryName,
         double latitudeDegrees,
         double longitudeDegrees,
         double altitudeFeet,
@@ -53,11 +59,16 @@ internal sealed class SimConnectUnavailableService : ISimulatorConnection
         throw new InvalidOperationException(
             "SimConnect support was not included in this build. Install the MSFS 2024 SDK and rebuild.");
 
-    public void SetUserAircraftPosition(MissionTeleport position) =>
+    public Task SetUserAircraftPositionAsync(MissionTeleport position) =>
+        Task.FromException(
+            new InvalidOperationException(
+                "SimConnect support was not included in this build. Install the MSFS 2024 SDK and rebuild."));
+
+    public void SetMissionCamera(MissionCamera camera) =>
         throw new InvalidOperationException(
             "SimConnect support was not included in this build. Install the MSFS 2024 SDK and rebuild.");
 
-    public void SetMissionCamera(MissionCamera camera) =>
+    public void ReleaseMissionCamera() =>
         throw new InvalidOperationException(
             "SimConnect support was not included in this build. Install the MSFS 2024 SDK and rebuild.");
 

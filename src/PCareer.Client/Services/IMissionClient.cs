@@ -11,6 +11,10 @@ public interface IMissionClient
         string phaseId,
         CancellationToken cancellationToken = default);
 
+    Task<MissionState> RestartMissionAsync(
+        string contractId,
+        CancellationToken cancellationToken = default);
+
     Task<MissionState> EvaluateMissionTriggerAsync(
         string contractId,
         TelemetrySnapshot telemetry,

@@ -15,7 +15,12 @@ internal sealed class FakeSimulatorConnection : ISimulatorConnection
 
     public string StatusMessage { get; } = "Fake simulator";
 
+    public IReadOnlyList<string> MissionDiagnostics => [];
+
     public List<string> SpawnCalls { get; } = [];
+    public List<(double Latitude, double Longitude, double AltitudeFeet, double Heading)> SpawnPositions { get; } = [];
+
+    public List<(string ObjectType, string PreferredTitle)> ResolveTitleCalls { get; } = [];
 
     public List<string> RemoveCalls { get; } = [];
 
@@ -25,7 +30,15 @@ internal sealed class FakeSimulatorConnection : ISimulatorConnection
 
     public List<MissionCamera> CameraCalls { get; } = [];
 
+    public int CameraReleaseCount { get; private set; }
+
+    public Exception? SpawnFailure { get; set; }
+
+    public string? ResolvedTitle { get; set; }
+
     private uint _nextObjectId = 1;
+
+    private bool _cameraAcquired;
 
     public event EventHandler? ConnectionChanged { add { } remove { } }
 
@@ -45,15 +58,25 @@ internal sealed class FakeSimulatorConnection : ISimulatorConnection
     {
     }
 
+    public Task<string> ResolveGroundObjectTitleAsync(string objectType, string preferredTitle)
+    {
+        ResolveTitleCalls.Add((objectType, preferredTitle));
+        return Task.FromResult(ResolvedTitle ?? preferredTitle);
+    }
+
     public Task<uint> SpawnGroundObjectAsync(
         string containerTitle,
+        string? liveryName,
         double latitudeDegrees,
         double longitudeDegrees,
         double altitudeFeet,
         double headingDegrees)
     {
         SpawnCalls.Add(containerTitle);
-        return Task.FromResult(_nextObjectId++);
+        SpawnPositions.Add((latitudeDegrees, longitudeDegrees, altitudeFeet, headingDegrees));
+        return SpawnFailure is null
+            ? Task.FromResult(_nextObjectId++)
+            : Task.FromException<uint>(SpawnFailure);
     }
 
     public Task RemoveGroundObjectAsync(uint objectId)
@@ -64,9 +87,27 @@ internal sealed class FakeSimulatorConnection : ISimulatorConnection
 
     public void FreezeGroundObject(uint objectId) => FreezeCalls.Add(objectId.ToString());
 
-    public void SetUserAircraftPosition(MissionTeleport position) => PositionCalls.Add(position);
+    public Task SetUserAircraftPositionAsync(MissionTeleport position)
+    {
+        PositionCalls.Add(position);
+        return Task.CompletedTask;
+    }
 
-    public void SetMissionCamera(MissionCamera camera) => CameraCalls.Add(camera);
+    public void SetMissionCamera(MissionCamera camera)
+    {
+        CameraCalls.Add(camera);
+        _cameraAcquired = true;
+    }
+
+    public void ReleaseMissionCamera()
+    {
+        if (!_cameraAcquired)
+        {
+            return;
+        }
+        _cameraAcquired = false;
+        CameraReleaseCount++;
+    }
 
     public void SetPayloadKilograms(double payloadKilograms)
     {
@@ -89,6 +130,8 @@ internal sealed class FakeMissionClient : IMissionClient
 
     public int EvaluateCalls { get; private set; }
 
+    public int RestartCalls { get; private set; }
+
     public int CompleteCalls { get; private set; }
 
     public Task<MissionState?> GetActiveMissionAsync(CancellationToken cancellationToken = default) =>
@@ -109,6 +152,15 @@ internal sealed class FakeMissionClient : IMissionClient
         var updated = Updated(next);
         Active = updated;
         return Task.FromResult(updated);
+    }
+
+    public Task<MissionState> RestartMissionAsync(
+        string contractId,
+        CancellationToken cancellationToken = default)
+    {
+        RestartCalls++;
+        Active = MissionTestData.NewActiveMission("briefing");
+        return Task.FromResult(Active);
     }
 
     public Task<MissionState> EvaluateMissionTriggerAsync(
@@ -253,25 +305,39 @@ internal static class MissionTestData
             [
                 new MissionGroundObject(
                     "obj_stretcher",
+                    "stretcher",
                     "ASO_Stretcher",
-                    "Stretcher trolley",
                     new MissionPosition(PickupLatitude, PickupLongitude, 520),
                     0,
                     Freeze: true),
                 new MissionGroundObject(
                     "obj_nurse",
+                    "medic",
                     "ASO_Nurse",
-                    "Nurse figure",
                     new MissionPosition(PickupLatitude, PickupLongitude, 520),
                     90,
                     Freeze: true),
                 new MissionGroundObject(
                     "obj_vehicle",
+                    "ambulance",
                     "ASO_Veh_MB_GWagen_01",
-                    "Ambulance vehicle",
                     new MissionPosition(PickupLatitude, PickupLongitude, 520),
                     180,
                     Freeze: false),
+                new MissionGroundObject(
+                    "destination_stretcher",
+                    "stretcher",
+                    "ASO_Stretcher",
+                    new MissionPosition(DeliveryLatitude, DeliveryLongitude, 450),
+                    90,
+                    Freeze: true),
+                new MissionGroundObject(
+                    "destination_ambulance",
+                    "ambulance",
+                    "ASO_Veh_MB_GWagen_01",
+                    new MissionPosition(DeliveryLatitude, DeliveryLongitude, 450),
+                    82,
+                    Freeze: true),
             ],
             MissionSequence: Phases,
             DialogLines:
@@ -293,7 +359,12 @@ internal static class MissionTestData
             {
                 ["started_at"] = JsonSerializer.SerializeToElement(now),
             },
-            SpawnedObjects: script.GroundObjects,
+            SpawnedObjects: currentPhaseId switch
+            {
+                "pickup_scene" or "loading" or "departure" => script.GroundObjects.Take(3).ToArray(),
+                "destination_scene" or "handover" or "delivery" => script.GroundObjects.Skip(3).ToArray(),
+                _ => [],
+            },
             StartedAt: now,
             CompletedAt: null,
             ContractId: ContractId);
@@ -306,42 +377,71 @@ internal static class MissionTestData
             "Briefing",
             "show_dialog",
             [],
-            null,
+            new MissionTrigger(
+                "proximity",
+                PickupLatitude + 1,
+                PickupLongitude,
+                9260,
+                null,
+                false,
+                null),
             null,
             "medevac_briefing",
             null,
-            null,
+            new MissionTeleport(PickupLatitude, PickupLongitude, 1487, 120, true),
             []),
         new MissionPhase(
-            "pickup_scene",
-            "Patient loading",
-            "spawn_objects",
-            [],
+            "fly_to_pickup",
+            "Fly to pickup",
             null,
-            30,
-            "loading_dialog",
-            new MissionCamera(null, 6, 2, -12, 55, 2),
+            [],
+            new MissionTrigger("proximity", PickupLatitude, PickupLongitude, 9260, null, null, null),
+            null,
+            null,
+            null,
             new MissionTeleport(
                 PickupLatitude,
                 PickupLongitude,
                 1487,
                 120,
                 true),
+            []),
+        new MissionPhase(
+            "pickup_scene",
+            "Taxi to patient",
+            "spawn_objects",
+            [],
+            new MissionTrigger("proximity", PickupLatitude, PickupLongitude, 20, null, true, null),
+            null,
+            null,
+            null,
+            new MissionTeleport(PickupLatitude, PickupLongitude, 1487, 120, true),
             ["obj_stretcher", "obj_nurse", "obj_vehicle"]),
+        new MissionPhase(
+            "loading",
+            "Patient loading",
+            null,
+            [],
+            null,
+            30,
+            "loading_dialog",
+            null,
+            null,
+            []),
         new MissionPhase(
             "departure",
             "Departure",
             "remove_objects",
             [],
-            new MissionTrigger("altitude", null, null, null, 500, null, null),
+            new MissionTrigger("on_ground", null, null, null, null, false, null),
             null,
             null,
             null,
-            null,
+            new MissionTeleport(PickupLatitude, PickupLongitude, 3500, 120, false),
             ["obj_stretcher", "obj_nurse", "obj_vehicle"]),
         new MissionPhase(
-            "en_route",
-            "En route",
+            "return_to_eddm",
+            "Return to EDDM",
             null,
             [],
             new MissionTrigger(
@@ -354,6 +454,28 @@ internal static class MissionTestData
                 null),
             null,
             null,
+            null,
+            new MissionTeleport(DeliveryLatitude, DeliveryLongitude, 1487, 120, true),
+            []),
+        new MissionPhase(
+            "destination_scene",
+            "Taxi to handover",
+            "spawn_objects",
+            [],
+            new MissionTrigger("proximity", DeliveryLatitude, DeliveryLongitude, 20, null, true, null),
+            null,
+            null,
+            null,
+            new MissionTeleport(DeliveryLatitude, DeliveryLongitude, 1487, 120, true),
+            ["destination_stretcher", "destination_ambulance"]),
+        new MissionPhase(
+            "handover",
+            "Patient handover",
+            null,
+            [],
+            null,
+            30,
+            "handover_dialog",
             null,
             null,
             []),

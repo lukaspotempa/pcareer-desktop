@@ -26,6 +26,13 @@ public sealed record ContractAssignment(
 
     public double RequiredPayloadKg { get; init; }
 
+    public string ContractType { get; init; } = string.Empty;
+
+    public bool IsMedevac => string.Equals(
+        ContractType,
+        "medical_evac",
+        StringComparison.Ordinal);
+
     public string FlightDesignator => string.IsNullOrWhiteSpace(FlightNumber)
         ? AirlineIcao.Trim().ToUpperInvariant()
         : $"{AirlineIcao.Trim().ToUpperInvariant()}{FlightNumber.Trim()}";

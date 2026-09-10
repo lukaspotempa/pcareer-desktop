@@ -14,6 +14,8 @@ public sealed class GroundObjectSpawner
 
     public bool IsEnabled => _simulator.SupportsObjectSpawning;
 
+    public string? LastSpawnError { get; private set; }
+
     public IReadOnlyCollection<SpawnedGroundObject> Spawned => _spawned.Values;
 
     public async Task<bool> TrySpawnAsync(MissionGroundObject groundObject)
@@ -29,12 +31,7 @@ public sealed class GroundObjectSpawner
 
         if (!_pendingSpawns.TryGetValue(groundObject.Id, out var spawnTask))
         {
-            spawnTask = _simulator.SpawnGroundObjectAsync(
-                groundObject.Title,
-                groundObject.Position.Lat,
-                groundObject.Position.Lon,
-                groundObject.Position.AltM / MetersPerFoot,
-                groundObject.HeadingDegrees);
+            spawnTask = ResolveAndSpawnAsync(groundObject);
             _pendingSpawns[groundObject.Id] = spawnTask;
         }
 
@@ -60,13 +57,29 @@ public sealed class GroundObjectSpawner
         }
         catch (TimeoutException)
         {
+            LastSpawnError = $"Timed out waiting for the simulator to accept “{groundObject.Title}”.";
             return false;
         }
-        catch
+        catch (Exception exception)
         {
+            LastSpawnError = $"Could not spawn “{groundObject.Title}”: {exception.Message}";
             _pendingSpawns.Remove(groundObject.Id);
             return false;
         }
+    }
+
+    private async Task<uint> ResolveAndSpawnAsync(MissionGroundObject groundObject)
+    {
+        var installedTitle = await _simulator.ResolveGroundObjectTitleAsync(
+            groundObject.ObjectType,
+            groundObject.Title);
+        return await _simulator.SpawnGroundObjectAsync(
+            installedTitle,
+            groundObject.LiveryName,
+            groundObject.Position.Lat,
+            groundObject.Position.Lon,
+            groundObject.Position.AltM / MetersPerFoot,
+            groundObject.HeadingDegrees);
     }
 
     public async Task RemoveAsync(IEnumerable<string> objectIds)

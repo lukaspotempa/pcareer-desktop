@@ -105,6 +105,7 @@ public sealed class PCareerApiClient : IFlightServerClient, IMissionClient, IDis
                 .ToArray(),
             AirlineIcao = active.AirlineIcao ?? "PCX",
             FlightNumber = active.FlightNumber,
+            ContractType = active.ContractType,
             RequiredFuelKg = active.RequiredFuelKg,
             RequiredPayloadKg = active.Payloads?.Sum(payload => payload.WeightKg) ?? 0,
         };
@@ -232,6 +233,20 @@ public sealed class PCareerApiClient : IFlightServerClient, IMissionClient, IDis
                 HttpMethod.Post,
                 "api/missions/advance",
                 new { contract_id = contractId, phase_id = phaseId }),
+            cancellationToken);
+        var body = await ReadRequiredAsync<MissionStateDto>(response, cancellationToken);
+        return body.ToModel();
+    }
+
+    public async Task<MissionState> RestartMissionAsync(
+        string contractId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await SendAuthenticatedAsync(
+            () => JsonRequest(
+                HttpMethod.Post,
+                "api/missions/restart",
+                new { contract_id = contractId }),
             cancellationToken);
         var body = await ReadRequiredAsync<MissionStateDto>(response, cancellationToken);
         return body.ToModel();
@@ -507,6 +522,7 @@ public sealed class PCareerApiClient : IFlightServerClient, IMissionClient, IDis
     private sealed record ContractDto(
         string ContractId,
         string Status,
+        string ContractType,
         string? AirlineIcao,
         string FlightNumber,
         string Aircraft,
@@ -619,10 +635,11 @@ public sealed class PCareerApiClient : IFlightServerClient, IMissionClient, IDis
         string Title,
         GroundObjectPositionDto Position,
         double HeadingDegrees,
-        bool Freeze)
+        bool Freeze,
+        string? LiveryName)
     {
         public MissionGroundObject ToModel() =>
-            new(Id, ObjectType, Title, Position.ToModel(), HeadingDegrees, Freeze);
+            new(Id, ObjectType, Title, Position.ToModel(), HeadingDegrees, Freeze, LiveryName);
     }
 
     private sealed record GroundObjectPositionDto(double Lat, double Lon, double AltM)
@@ -639,7 +656,7 @@ public sealed class PCareerApiClient : IFlightServerClient, IMissionClient, IDis
         double? DurationSec,
         string? DialogId,
         MissionCameraDto? Camera,
-        MissionTeleportDto? Teleport,
+        MissionTeleportDto? DebugTeleport,
         List<string> ObjectIds)
     {
         public MissionPhase ToModel() => new(
@@ -653,7 +670,7 @@ public sealed class PCareerApiClient : IFlightServerClient, IMissionClient, IDis
             DurationSec,
             DialogId,
             Camera?.ToModel(),
-            Teleport?.ToModel(),
+            DebugTeleport?.ToModel(),
             ObjectIds ?? []);
     }
 
