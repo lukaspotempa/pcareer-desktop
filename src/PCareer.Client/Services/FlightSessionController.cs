@@ -81,7 +81,7 @@ public sealed class FlightSessionController
         if (contract.DepartureLatitudeDegrees is double departureLatitude
             && contract.DepartureLongitudeDegrees is double departureLongitude)
         {
-            var distance = DistanceNauticalMiles(
+            var distance = DistanceHelper.DistanceNauticalMiles(
                 telemetry.LatitudeDegrees,
                 telemetry.LongitudeDegrees,
                 departureLatitude,
@@ -112,9 +112,12 @@ public sealed class FlightSessionController
         }
     }
 
-    public bool LoadsMatch(ContractAssignment contract, TelemetrySnapshot telemetry) =>
+    public bool LoadsMatch(
+        ContractAssignment contract,
+        TelemetrySnapshot telemetry,
+        bool ignorePayload = false) =>
         FuelMatches(contract.RequiredFuelKg, telemetry.FuelTotalKg)
-        && WithinOnePercent(contract.RequiredPayloadKg, telemetry.PayloadWeightKg);
+        && (ignorePayload || WithinOnePercent(contract.RequiredPayloadKg, telemetry.PayloadWeightKg));
 
     public string LoadingStatus(ContractAssignment contract, TelemetrySnapshot? telemetry)
     {
@@ -283,7 +286,7 @@ public sealed class FlightSessionController
             5,
             Math.Max(telemetry.GroundSpeedKnots, _previousTelemetry.GroundSpeedKnots)
                 * seconds / 3600d * 2d + 2d);
-        var actualDistance = DistanceNauticalMiles(
+        var actualDistance = DistanceHelper.DistanceNauticalMiles(
             _previousTelemetry.LatitudeDegrees,
             _previousTelemetry.LongitudeDegrees,
             telemetry.LatitudeDegrees,
@@ -447,25 +450,4 @@ public sealed class FlightSessionController
         }
     }
 
-    private static double DistanceNauticalMiles(
-        double latitude1,
-        double longitude1,
-        double latitude2,
-        double longitude2)
-    {
-        const double earthRadiusNauticalMiles = 3440.065;
-        var latitudeDelta = DegreesToRadians(latitude2 - latitude1);
-        var longitudeDelta = DegreesToRadians(longitude2 - longitude1);
-        var firstLatitude = DegreesToRadians(latitude1);
-        var secondLatitude = DegreesToRadians(latitude2);
-
-        var haversine =
-            Math.Pow(Math.Sin(latitudeDelta / 2), 2)
-            + Math.Cos(firstLatitude)
-            * Math.Cos(secondLatitude)
-            * Math.Pow(Math.Sin(longitudeDelta / 2), 2);
-        return 2 * earthRadiusNauticalMiles * Math.Asin(Math.Sqrt(haversine));
-    }
-
-    private static double DegreesToRadians(double degrees) => degrees * Math.PI / 180d;
 }

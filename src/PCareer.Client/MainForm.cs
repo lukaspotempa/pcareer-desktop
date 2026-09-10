@@ -10,23 +10,36 @@ public sealed class MainForm : Form
     private const int SimConnectMessageId = 0x0402;
 
     private readonly ISimulatorConnection _simulator = SimulatorConnectionFactory.Create();
+    private readonly GroundObjectSpawner _groundObjectSpawner;
     private readonly PCareerApiClient _serverClient;
     private readonly DesktopSession _session;
     private readonly FlightSessionController _flight = new();
+    private readonly MissionExecutor _missions;
     private readonly System.Windows.Forms.Timer _retryTimer = new() { Interval = 2000 };
+    private readonly System.Windows.Forms.Timer _missionTimer = new() { Interval = 5000 };
 
     private readonly WebView2 _web = new() { Dock = DockStyle.Fill };
 
     private TelemetrySnapshot? _latestTelemetry;
     private ContractAssignment? _contract;
     private ActiveFlightSession? _pendingActiveFlight;
+    private MissionSnapshot _missionSnapshot = MissionSnapshots.Idle;
     private bool _recoveringFlightState = true;
     private int _activationInProgress;
     private int _cancellationInProgress;
+    private int _finishInProgress;
+    private int _missionRestartInProgress;
+    private bool _applicationStateInitialized;
+    private bool _simulatorSessionConnected;
 
     public MainForm(PCareerApiClient serverClient, DesktopSession session)
     {
-        _serverClient = serverClient;
+        _groundObjectSpawner = new GroundObjectSpawner(_simulator);
+        _missions = new MissionExecutor(
+            _serverClient = serverClient,
+            _simulator,
+            _groundObjectSpawner,
+            () => _latestTelemetry);
         _session = session;
         Text = "Virtual Pilot Network";
         Icon = BrandAssets.ApplicationIcon;
@@ -48,7 +61,16 @@ public sealed class MainForm : Form
             BeginInvoke(() => _ = UploadAircraftSnapshotAsync(snapshot));
         _serverClient.TelemetryStatusChanged += ServerTelemetryStatusChanged;
         _serverClient.TelemetryRejected += ServerTelemetryRejected;
-        FormClosed += (_, _) => _simulator.Dispose();
+        _missions.MissionChanged += (_, snapshot) => ApplyMissionSnapshot(snapshot);
+        _missions.FlightSettlementRequested += (_, _) =>
+            BeginInvoke(() => _ = FinishFlightAsync(automatic: true));
+        _missionTimer.Tick += (_, _) => _ = _missions.PollAsync();
+        FormClosed += (_, _) =>
+        {
+            _retryTimer.Stop();
+            _missionTimer.Stop();
+            _simulator.Dispose();
+        };
 
         _finishButton.Enabled = false;
         _startButton.Enabled = false;
@@ -90,7 +112,8 @@ public sealed class MainForm : Form
         }
         TryConnect();
         _retryTimer.Start();
-        _ = InitializeFlightStateAsync();
+        _missionTimer.Start();
+        _ = InitializeApplicationStateAsync();
     }
 
     protected override void WndProc(ref Message message)
@@ -128,12 +151,32 @@ public sealed class MainForm : Form
             case "loadFuel":
                 LoadFuelClicked();
                 break;
+            case "reloadMissionScene":
+                _ = ReloadMissionSceneClickedAsync();
+                break;
+            case "advanceMissionPhase":
+                _ = AdvanceMissionPhaseClickedAsync();
+                break;
 #if DEBUG
             case "transmitAircraft":
                 TransmitAircraftClicked(this, EventArgs.Empty);
                 break;
 #endif
         }
+    }
+
+    private void ApplyMissionSnapshot(MissionSnapshot snapshot)
+    {
+        if (IsDisposed)
+        {
+            return;
+        }
+
+        BeginInvoke(() =>
+        {
+            _missionSnapshot = snapshot;
+            SendStateToJS();
+        });
     }
 
     private void SendStateToJS()
@@ -174,6 +217,21 @@ public sealed class MainForm : Form
 
             readyText = _readinessLabel.Text,
             readyDot = _readinessLabel.ForeColor == Palette.StatusOk ? "ok" : "warn",
+
+            missionActive = _missionSnapshot.IsActive || _missionSnapshot.MissionName is not null,
+            missionTitle = _missionSnapshot.MissionName ?? "MedEvac mission",
+            missionPhase = _missionSnapshot.PhaseLabel ?? "--",
+            missionDialog = _missionSnapshot.DialogText ?? "",
+            missionStatus = _missionSnapshot.StatusText ?? "",
+            missionDiagnostics = string.Join("\n", _simulator.MissionDiagnostics),
+            reloadMissionSceneEnabled = _missions.CanReloadScene,
+            advanceMissionPhaseEnabled = _missions.CanAdvanceToNextPhase,
+            missionDot = _missionSnapshot.Outcome switch
+            {
+                "completed" => "ok",
+                "cancelled" => "warn",
+                _ => _missionSnapshot.IsActive ? "info" : "idle",
+            },
 
             startEnabled = _startButton.Enabled,
             finishEnabled = _finishButton.Enabled,
@@ -217,10 +275,17 @@ public sealed class MainForm : Form
 
     private void UpdateConnectionState()
     {
+        var connected = _simulator.IsConnected;
+        var openedNewSession = connected && !_simulatorSessionConnected;
+        _simulatorSessionConnected = connected;
         _connectionLabel.Text = _simulator.StatusMessage;
-        _transmitButton.Enabled = _simulator.IsConnected;
+        _transmitButton.Enabled = connected;
         UpdateReadiness();
         SendStateToJS();
+        if (openedNewSession && _applicationStateInitialized)
+        {
+            _ = RestartMissionForDebugAsync();
+        }
     }
 
     // ── Contract ─────────────────────────────────────────────────────────
@@ -290,6 +355,50 @@ public sealed class MainForm : Form
         }
     }
 
+    private async Task InitializeApplicationStateAsync()
+    {
+        try
+        {
+            await RestartMissionForDebugAsync();
+            await InitializeFlightStateAsync();
+        }
+        finally
+        {
+            _applicationStateInitialized = true;
+        }
+    }
+
+    private async Task RestartMissionForDebugAsync()
+    {
+        if (Interlocked.CompareExchange(ref _missionRestartInProgress, 1, 0) != 0)
+        {
+            return;
+        }
+        try
+        {
+            var missionRestarted = await _missions.RestartAsync();
+            if (!missionRestarted)
+            {
+                return;
+            }
+            _pendingActiveFlight = null;
+            _latestTelemetry = null;
+            _flight.ResetForNextFlight();
+            _finishButton.Enabled = false;
+            await LoadActiveContractAsync();
+            SendStateToJS();
+        }
+        catch (Exception exception)
+        {
+            _telemetryServerLabel.Text = $"Could not restart the mission: {exception.Message}";
+            SendStateToJS();
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _missionRestartInProgress, 0);
+        }
+    }
+
     // ── Telemetry ────────────────────────────────────────────────────────
 
     private void ServerTelemetryStatusChanged(object? sender, string statusMessage)
@@ -356,7 +465,7 @@ public sealed class MainForm : Form
         }
         else if (_flight.Phase is FlightPhase.Loading
             && _contract is not null
-            && _flight.LoadsMatch(_contract, telemetry))
+            && _flight.LoadsMatch(_contract, telemetry, ignorePayload: _contract.IsMedevac))
         {
             _ = ActivateLoadedFlightAsync(_contract, telemetry);
         }
@@ -488,11 +597,13 @@ public sealed class MainForm : Form
         try
         {
             _startButton.Enabled = false;
+            await _missions.PollAsync();
             _flight.BeginLoading();
             _flightStatusLabel.Text = FlightStatusText();
             UpdateReadiness();
             SendStateToJS();
-            if (_flight.LoadsMatch(_contract, _latestTelemetry))
+            if (_latestTelemetry is not null
+                && _flight.LoadsMatch(_contract, _latestTelemetry, ignorePayload: _contract.IsMedevac))
             {
                 await ActivateLoadedFlightAsync(_contract, _latestTelemetry);
             }
@@ -502,6 +613,44 @@ public sealed class MainForm : Form
             MessageBox.Show(this, exception.Message, "Could not start flight",
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
             UpdateReadiness();
+            SendStateToJS();
+        }
+    }
+
+    private async Task ReloadMissionSceneClickedAsync()
+    {
+        try
+        {
+            await _missions.ReloadSceneAsync();
+            SendStateToJS();
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(
+                this,
+                exception.Message,
+                "Could not reload mission scene",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+            SendStateToJS();
+        }
+    }
+
+    private async Task AdvanceMissionPhaseClickedAsync()
+    {
+        try
+        {
+            await _missions.AdvanceToNextPhaseAsync();
+            SendStateToJS();
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(
+                this,
+                exception.Message,
+                "Could not advance mission phase",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
             SendStateToJS();
         }
     }
@@ -518,13 +667,35 @@ public sealed class MainForm : Form
         {
             var flightId = await _serverClient.StartFlightAsync(contract, telemetry);
             _flight.Start(flightId, telemetry);
+            if (_missions.CurrentMission is not null)
+            {
+                await _missions.InitializeForFlightAsync();
+            }
             _flightStatusLabel.Text = FlightStatusText();
             UpdateReadiness();
             SendStateToJS();
         }
         catch (Exception exception)
         {
-            _flight.AbortLoading();
+            if (_flight.FlightId is Guid activeFlightId)
+            {
+                try
+                {
+                    await _serverClient.CancelFlightAsync(
+                        activeFlightId,
+                        "Mission initialization failed.");
+                }
+                catch
+                {
+                    // Preserve the original initialization error for the player.
+                }
+                _flight.MarkServerSessionLost();
+                _flight.ResetCancelledFlight();
+            }
+            else
+            {
+                _flight.AbortLoading();
+            }
             MessageBox.Show(this, exception.Message, "Could not activate flight",
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
             UpdateReadiness();
@@ -571,18 +742,54 @@ public sealed class MainForm : Form
 
     private async void FinishFlightClicked(object? sender, EventArgs eventArgs)
     {
-        if (_latestTelemetry is null || _flight.FlightId is not Guid flightId) return;
+        await FinishFlightAsync();
+    }
+
+    private async Task FinishFlightAsync(bool automatic = false)
+    {
+        if (_latestTelemetry is not { } telemetry)
+        {
+            if (automatic)
+            {
+                MessageBox.Show(
+                    this,
+                    "The patient handover is complete, but fresh simulator telemetry is unavailable.",
+                    "Could not finish flight",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+            return;
+        }
+        if (Interlocked.CompareExchange(ref _finishInProgress, 1, 0) != 0) return;
 
         try
         {
+            if (_flight.FlightId is null)
+            {
+                var activeFlight = await _serverClient.GetActiveFlightAsync();
+                if (activeFlight is null
+                    || _contract is null
+                    || !string.Equals(
+                        activeFlight.ContractId,
+                        _contract.ContractId,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException(
+                        "No active server flight exists for this mission. Restart the mission and "
+                            + "use Start flight before departing.");
+                }
+                _flight.Restore(activeFlight, telemetry);
+            }
+            var flightId = _flight.FlightId
+                ?? throw new InvalidOperationException("The active flight could not be recovered.");
             _finishButton.Enabled = false;
             SendStateToJS();
-            await _serverClient.FinishFlightAsync(flightId, _latestTelemetry);
+            await _serverClient.FinishFlightAsync(flightId, telemetry);
             _flight.Finish();
             ResetAfterCompletedFlight();
             MessageBox.Show(
                 this,
-                "The server confirmed the flight and completed the active contract.",
+                "The flight has ended. The server completed the contract and awarded your reward.",
                 "Flight complete",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
@@ -594,6 +801,10 @@ public sealed class MainForm : Form
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
             _finishButton.Enabled = _flight.CanFinish;
             SendStateToJS();
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _finishInProgress, 0);
         }
     }
 

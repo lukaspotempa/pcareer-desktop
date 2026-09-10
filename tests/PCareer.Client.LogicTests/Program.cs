@@ -1,6 +1,8 @@
 using PCareer.Client;
 using PCareer.Client.Models;
 using PCareer.Client.Services;
+using System.Text.Json;
+using PCareer.Client.LogicTests;
 
 Assert(
     PCareer.Client.Program.SelectServerUrl(
@@ -216,6 +218,27 @@ Assert(
                 toleranceContract.RequiredPayloadKg / 0.45359237,
         }),
     "A load deviation above three percent must still be rejected.");
+Assert(
+    controller.LoadsMatch(
+        toleranceContract,
+        onGround with
+        {
+            FuelTotalKg = toleranceContract.RequiredFuelKg!.Value,
+            PayloadStationWeightPounds =
+                toleranceContract.RequiredPayloadKg * 3.0 / 0.45359237,
+        },
+        ignorePayload: true),
+    "Payload deviations beyond the tolerance must be accepted when payload is ignored (medevac).");
+Assert(
+    !controller.LoadsMatch(
+        toleranceContract,
+        onGround with
+        {
+            FuelTotalKg = toleranceContract.RequiredFuelKg!.Value,
+            PayloadStationWeightPounds =
+                toleranceContract.RequiredPayloadKg * 3.0 / 0.45359237,
+        }),
+    "The same payload deviation must still be rejected when payload is enforced.");
 controller.Start(Guid.NewGuid(), onGround);
 Assert(controller.Phase == FlightPhase.Started, "Start must enter Started.");
 
@@ -316,7 +339,265 @@ Assert(
     payloadController.Observe(changedPayloadSample)?.Contains("payload changed") == true,
     "A real payload-station weight change must still cancel an active flight.");
 
-Console.WriteLine("VPN desktop flight lifecycle checks passed.");
+// ── Mission phase driver guard rails ────────────────────────────────────
+var missionDriveTest = MissionTestData.NewActiveMission("loading");
+Assert(
+    MissionPhaseDriver.FindPhase(missionDriveTest, "delivery") is { } deliveryPhase
+        && MissionPhaseDriver.IsAction(deliveryPhase, MissionPhaseDriver.ActionCompleteMission),
+    "The delivery phase should carry the complete_mission action.");
+Assert(
+    MissionPhaseDriver.NextPhase(missionDriveTest)?.Id == "departure",
+    "The next phase should follow the authoring order.");
+Assert(
+    MissionPhaseDriver.NextPhase(MissionTestData.NewActiveMission("delivery")) is null,
+    "The final phase must have no successor.");
+Assert(
+    MissionPhaseDriver.DialogText(missionDriveTest) == "The medics are loading the patient.",
+    "The current phase dialog should resolve through its identifier.");
+Assert(
+    MissionPhaseDriver.PhaseElapsedSeconds(
+        missionDriveTest with
+        {
+            PhaseData = new Dictionary<string, JsonElement>
+            {
+                ["phase_started_at"] = JsonSerializer.SerializeToElement(
+                    DateTimeOffset.UtcNow.AddSeconds(-40)),
+            },
+        },
+        DateTimeOffset.UtcNow) is { } phaseElapsed
+        && phaseElapsed >= 39.9
+        && phaseElapsed <= 41,
+    "The phase timer should be measured from the server phase start.");
+Assert(
+    MissionPhaseDriver.ObjectsForPhase(
+        missionDriveTest,
+        MissionPhaseDriver.FindPhase(missionDriveTest, "pickup_scene")!)
+        .Select(spec => spec.Id)
+        .SequenceEqual(new[] { "obj_stretcher", "obj_nurse", "obj_vehicle" }),
+    "spawn_objects should map authoring object identifiers to their full specifications.");
+
+// ── Ground object spawner ───────────────────────────────────────────────
+var fakeSimulator = new FakeSimulatorConnection(supportsObjectSpawning: true)
+{
+    ResolvedTitle = "Installed stretcher preset",
+};
+var spawner = new GroundObjectSpawner(fakeSimulator);
+var spawnTestObject = MissionTestData.NewActiveMission("pickup_scene").Script.GroundObjects[0];
+Assert(
+    await spawner.TrySpawnAsync(spawnTestObject),
+    "An enabled simulator should spawn a documented ground object.");
+Assert(
+    fakeSimulator.ResolveTitleCalls.SequenceEqual(new[] { ("stretcher", "ASO_Stretcher") })
+        && fakeSimulator.SpawnCalls.SequenceEqual(new[] { "Installed stretcher preset" })
+        && fakeSimulator.FreezeCalls.Count == 1,
+    "A ground object should resolve to an installed preset and freeze exactly once after spawning.");
+Assert(
+    await spawner.TrySpawnAsync(spawnTestObject),
+    "Re-requesting an already spawned object should be a no-op success.");
+Assert(
+    fakeSimulator.SpawnCalls.Count == 1,
+    "Re-requesting an object must not spawn it twice.");
+await spawner.RemoveAsync(spawnTestObject.Id);
+Assert(
+    spawner.Spawned.Count == 0 && fakeSimulator.RemoveCalls.Count == 1,
+    "Removing a spawned object should clear it from the simulator and the tracker.");
+var disabledSimulator = new FakeSimulatorConnection(supportsObjectSpawning: false);
+var disabledSpawner = new GroundObjectSpawner(disabledSimulator);
+Assert(
+    !await disabledSpawner.TrySpawnAsync(spawnTestObject) && disabledSimulator.SpawnCalls.Count == 0,
+    "Without SimConnect support the spawner should fail cleanly without a hang.");
+
+var failingSimulator = new FakeSimulatorConnection { SpawnFailure = new InvalidOperationException("not an MSFS 2024 aircraft preset") };
+var failingSpawner = new GroundObjectSpawner(failingSimulator);
+Assert(
+    !await failingSpawner.TrySpawnAsync(spawnTestObject),
+    "A rejected spawn request should fail fast instead of hanging the pickup scene.");
+Assert(
+    failingSpawner.LastSpawnError is { Length: > 0 }
+        && failingSpawner.LastSpawnError.Contains("not an MSFS 2024 aircraft preset", StringComparison.Ordinal),
+    "The spawner should surface the simulator rejection reason.");
+
+// ── MedEvac mission flow ────────────────────────────────────────────────
+var missionSimulator = new FakeSimulatorConnection();
+var missionSpawner = new GroundObjectSpawner(missionSimulator);
+var missionClient = new FakeMissionClient();
+TelemetrySnapshot? latestLoaded = null;
+var completedOutcomeSeen = false;
+var settlementRequests = 0;
+var executor = new MissionExecutor(missionClient, missionSimulator, missionSpawner, () => latestLoaded);
+executor.FlightSettlementRequested += (_, _) => settlementRequests++;
+executor.MissionChanged += (_, snapshot) =>
+{
+    if (snapshot.Outcome == "completed")
+    {
+        completedOutcomeSeen = true;
+    }
+};
+missionClient.Active = MissionTestData.NewActiveMission("briefing");
+
+await executor.PollAsync();
+Assert(
+    missionClient.EvaluateCalls == 0 && missionClient.AdvanceCalls == 0,
+    "Passive polling must leave the mission at its pre-flight briefing.");
+
+await executor.InitializeForFlightAsync();
+Assert(
+    missionClient.Active?.CurrentPhaseId == "briefing"
+        && missionSimulator.PositionCalls.Count == 0
+        && missionSimulator.SpawnCalls.Count == 0
+        && executor.CanAdvanceToNextPhase,
+    "Starting the flight must arm the EDDM departure trigger and its debug action without moving the aircraft.");
+
+latestLoaded = MissionTelemetry(
+    MissionTestData.PickupLatitude + 1,
+    MissionTestData.PickupLongitude,
+    onGround: true);
+await executor.AdvanceToNextPhaseAsync();
+Assert(
+    missionClient.Active?.CurrentPhaseId == "departure"
+        && missionSimulator.PositionCalls.Count == 1,
+    $"The EDDM debug action must teleport directly to Innsbruck and enter the pickup sequence "
+        + $"(phase {missionClient.Active?.CurrentPhaseId}, positions {missionSimulator.PositionCalls.Count}).");
+Assert(
+    missionSimulator.SpawnCalls.SequenceEqual(
+            new[] { "ASO_Stretcher", "ASO_Nurse", "ASO_Veh_MB_GWagen_01" })
+        && missionSimulator.SpawnCalls.Count == 3
+        && missionSimulator.FreezeCalls.Count == 2
+        && missionSimulator.RemoveCalls.Count == 0,
+    "The pickup phase should spawn every object and keep them staged through loading.");
+Assert(
+    missionClient.AdvanceCalls == 1,
+    "Only the timed loading phase should use the explicit advance endpoint in this trigger-driven flow.");
+
+var resumedSimulator = new FakeSimulatorConnection();
+var resumedClient = new FakeMissionClient
+{
+    Active = MissionTestData.NewActiveMission("departure"),
+};
+var resumedExecutor = new MissionExecutor(
+    resumedClient,
+    resumedSimulator,
+    new GroundObjectSpawner(resumedSimulator),
+    () => null);
+await resumedExecutor.PollAsync();
+Assert(
+    resumedSimulator.PositionCalls.Count == 0
+        && resumedSimulator.SpawnCalls.Count == 3
+        && resumedClient.AdvanceCalls == 0,
+    "Restarting during departure must restore the server-recorded scene without moving the aircraft.");
+Assert(resumedExecutor.CanReloadScene, "An initialized pickup scene should be reloadable.");
+var revisedLatitude = MissionTestData.PickupLatitude + 0.01;
+resumedClient.Active = resumedClient.Active! with
+{
+    Script = resumedClient.Active.Script with
+    {
+        GroundObjects = resumedClient.Active.Script.GroundObjects
+            .Select(item => item.Id == "obj_stretcher"
+                ? item with { Position = item.Position with { Lat = revisedLatitude } }
+                : item)
+            .ToArray(),
+    },
+};
+await resumedExecutor.ReloadSceneAsync();
+Assert(
+    resumedSimulator.SpawnCalls.Count == 6
+        && resumedSimulator.RemoveCalls.Count == 3
+        && resumedSimulator.PositionCalls.Count == 0
+        && resumedSimulator.SpawnPositions[3].Latitude == revisedLatitude,
+    "Reloading must recreate every live scene object from the latest script definitions without repositioning the aircraft.");
+await resumedExecutor.RestartAsync();
+Assert(
+    resumedClient.RestartCalls == 1
+        && resumedClient.Active?.CurrentPhaseId == "briefing"
+        && resumedSimulator.RemoveCalls.Count == 6,
+    "Restarting must reset the server mission and remove the reconstructed scene.");
+latestLoaded = MissionTelemetry(
+    MissionTestData.DeliveryLatitude,
+    MissionTestData.DeliveryLongitude,
+    onGround: true);
+await executor.AdvanceToNextPhaseAsync();
+await executor.PollAsync();
+Assert(
+    missionSpawner.Spawned.Count == 2,
+    $"The destination ambulance and stretcher must remain staged for handover (actual {missionSpawner.Spawned.Count}).");
+Assert(
+    !completedOutcomeSeen
+        && missionClient.CompleteCalls == 0
+        && missionClient.Active?.CurrentPhaseId == "delivery"
+        && settlementRequests == 1,
+    "The completed handover timer must request flight settlement exactly once without completing the contract itself.");
+await executor.PollAsync();
+Assert(settlementRequests == 1, "Repeated mission polling must not request flight settlement twice.");
+
+missionClient.Active = null;
+await executor.PollAsync();
+missionClient.Active = MissionTestData.NewActiveMission("briefing");
+await executor.PollAsync();
+await executor.InitializeForFlightAsync();
+
+latestLoaded = MissionTelemetry(
+    MissionTestData.PickupLatitude,
+    MissionTestData.PickupLongitude,
+    onGround: true);
+await executor.AdvanceToNextPhaseAsync();
+Assert(
+    missionClient.Active?.CurrentPhaseId == "departure",
+    "A second mission on the same script must drive through the same phases again.");
+Assert(
+    missionSimulator.SpawnCalls.Count == 8 && missionSimulator.RemoveCalls.Count == 5,
+    "A repeated mission must respawn the stage objects after a clean reset.");
+latestLoaded = MissionTelemetry(
+    MissionTestData.DeliveryLatitude,
+    MissionTestData.DeliveryLongitude,
+    onGround: true);
+await executor.AdvanceToNextPhaseAsync();
+await executor.PollAsync();
+Assert(
+    missionClient.CompleteCalls == 0,
+    "Mission progression must never settle contracts independently.");
+
+// ── Airport proximity gating ─────────────────────────────────────────────
+var proximityClient = new FakeMissionClient();
+var proximitySimulator = new FakeSimulatorConnection();
+var proximitySpawner = new GroundObjectSpawner(proximitySimulator);
+TelemetrySnapshot? proximityTelemetry = null;
+var proximityExecutor = new MissionExecutor(
+    proximityClient, proximitySimulator, proximitySpawner, () => proximityTelemetry);
+proximityClient.Active = MissionTestData.NewActiveMission("briefing");
+await proximityExecutor.PollAsync();
+await proximityExecutor.InitializeForFlightAsync();
+Assert(
+    proximityClient.Active?.CurrentPhaseId == "briefing",
+    "The mission must start at the briefing phase.");
+
+proximityTelemetry = MissionTelemetry(
+    MissionTestData.PickupLatitude,
+    MissionTestData.PickupLongitude,
+    onGround: true);
+await proximityExecutor.AdvanceToNextPhaseAsync();
+Assert(
+    proximityClient.Active?.CurrentPhaseId == "departure",
+    "Debug teleport must advance through to the departure phase.");
+
+proximityTelemetry = MissionTelemetry(
+    MissionTestData.DeliveryLatitude,
+    MissionTestData.DeliveryLongitude,
+    onGround: false);
+await proximityExecutor.PollAsync();
+Assert(
+    proximityClient.Active?.CurrentPhaseId == "departure",
+    "A departure from outside the pickup airport range must not advance the mission phase.");
+
+proximityTelemetry = MissionTelemetry(
+    MissionTestData.PickupLatitude + 0.01,
+    MissionTestData.PickupLongitude,
+    onGround: false);
+await proximityExecutor.PollAsync();
+Assert(
+    proximityClient.Active?.CurrentPhaseId == "return_to_eddm",
+    "A departure from within the pickup airport range must advance the mission phase.");
+
+Console.WriteLine("VPN desktop mission lifecycle checks passed.");
 return;
 
 static TelemetrySnapshot Sample(
@@ -349,6 +630,34 @@ static TelemetrySnapshot Sample(
     GearPositionPercent: 100,
     ParkingBrakeSet: onGround,
     PayloadStationWeightPounds: (2300d - 1663d) - 108.9d / 0.45359237d);
+
+static TelemetrySnapshot MissionTelemetry(
+    double latitudeDegrees,
+    double longitudeDegrees,
+    bool onGround) => new(
+    ObservedAt: DateTimeOffset.UtcNow,
+    AircraftTitle: "Cessna 208B Grand Caravan EX",
+    AircraftAtcModel: "C208",
+    AircraftAtcType: "Cessna",
+    LatitudeDegrees: latitudeDegrees,
+    LongitudeDegrees: longitudeDegrees,
+    AltitudeFeet: 2500,
+    AltitudeAglFeet: onGround ? 5 : 800,
+    IndicatedAirspeedKnots: onGround ? 0 : 120,
+    GroundSpeedKnots: onGround ? 0 : 125,
+    VerticalSpeedFeetPerMinute: 0,
+    HeadingTrueDegrees: 90,
+    PitchDegrees: 0,
+    BankDegrees: 0,
+    OnGround: onGround,
+    SlewActive: false,
+    SimulationRate: 1,
+    FuelTotalKg: 500,
+    TotalWeightPounds: 8200,
+    EmptyWeightPounds: 4500,
+    EngineCount: 1,
+    GearPositionPercent: 100,
+    ParkingBrakeSet: onGround);
 
 static void Assert(bool condition, string message)
 {

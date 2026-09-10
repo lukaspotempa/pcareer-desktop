@@ -6,7 +6,11 @@ public interface ISimulatorConnection : IDisposable
 {
     bool IsConnected { get; }
 
+    bool SupportsObjectSpawning { get; }
+
     string StatusMessage { get; }
+
+    IReadOnlyList<string> MissionDiagnostics { get; }
 
     event EventHandler? ConnectionChanged;
 
@@ -19,6 +23,26 @@ public interface ISimulatorConnection : IDisposable
     void ReceiveMessage();
 
     void RequestAircraftIdentity();
+
+    Task<string> ResolveGroundObjectTitleAsync(string objectType, string preferredTitle);
+
+    Task<uint> SpawnGroundObjectAsync(
+        string containerTitle,
+        string? liveryName,
+        double latitudeDegrees,
+        double longitudeDegrees,
+        double altitudeFeet,
+        double headingDegrees);
+
+    Task RemoveGroundObjectAsync(uint objectId);
+
+    void FreezeGroundObject(uint objectId);
+
+    Task SetUserAircraftPositionAsync(MissionTeleport position);
+
+    void SetMissionCamera(MissionCamera camera);
+
+    void ReleaseMissionCamera();
 
     void SetPayloadKilograms(double payloadKilograms);
 
