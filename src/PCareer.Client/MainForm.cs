@@ -10,23 +10,32 @@ public sealed class MainForm : Form
     private const int SimConnectMessageId = 0x0402;
 
     private readonly ISimulatorConnection _simulator = SimulatorConnectionFactory.Create();
+    private readonly GroundObjectSpawner _groundObjectSpawner;
     private readonly PCareerApiClient _serverClient;
     private readonly DesktopSession _session;
     private readonly FlightSessionController _flight = new();
+    private readonly MissionExecutor _missions;
     private readonly System.Windows.Forms.Timer _retryTimer = new() { Interval = 2000 };
+    private readonly System.Windows.Forms.Timer _missionTimer = new() { Interval = 5000 };
 
     private readonly WebView2 _web = new() { Dock = DockStyle.Fill };
 
     private TelemetrySnapshot? _latestTelemetry;
     private ContractAssignment? _contract;
     private ActiveFlightSession? _pendingActiveFlight;
+    private MissionSnapshot _missionSnapshot = MissionSnapshots.Idle;
     private bool _recoveringFlightState = true;
     private int _activationInProgress;
     private int _cancellationInProgress;
 
     public MainForm(PCareerApiClient serverClient, DesktopSession session)
     {
-        _serverClient = serverClient;
+        _groundObjectSpawner = new GroundObjectSpawner(_simulator);
+        _missions = new MissionExecutor(
+            _serverClient = serverClient,
+            _simulator,
+            _groundObjectSpawner,
+            () => _latestTelemetry);
         _session = session;
         Text = "Virtual Pilot Network";
         Icon = BrandAssets.ApplicationIcon;
@@ -48,7 +57,14 @@ public sealed class MainForm : Form
             BeginInvoke(() => _ = UploadAircraftSnapshotAsync(snapshot));
         _serverClient.TelemetryStatusChanged += ServerTelemetryStatusChanged;
         _serverClient.TelemetryRejected += ServerTelemetryRejected;
-        FormClosed += (_, _) => _simulator.Dispose();
+        _missions.MissionChanged += (_, snapshot) => ApplyMissionSnapshot(snapshot);
+        _missionTimer.Tick += (_, _) => _ = _missions.PollAsync();
+        FormClosed += (_, _) =>
+        {
+            _retryTimer.Stop();
+            _missionTimer.Stop();
+            _simulator.Dispose();
+        };
 
         _finishButton.Enabled = false;
         _startButton.Enabled = false;
@@ -90,7 +106,9 @@ public sealed class MainForm : Form
         }
         TryConnect();
         _retryTimer.Start();
+        _missionTimer.Start();
         _ = InitializeFlightStateAsync();
+        _ = _missions.PollAsync();
     }
 
     protected override void WndProc(ref Message message)
@@ -136,6 +154,20 @@ public sealed class MainForm : Form
         }
     }
 
+    private void ApplyMissionSnapshot(MissionSnapshot snapshot)
+    {
+        if (IsDisposed)
+        {
+            return;
+        }
+
+        BeginInvoke(() =>
+        {
+            _missionSnapshot = snapshot;
+            SendStateToJS();
+        });
+    }
+
     private void SendStateToJS()
     {
         if (_web.CoreWebView2 is null) return;
@@ -174,6 +206,18 @@ public sealed class MainForm : Form
 
             readyText = _readinessLabel.Text,
             readyDot = _readinessLabel.ForeColor == Palette.StatusOk ? "ok" : "warn",
+
+            missionActive = _missionSnapshot.IsActive || _missionSnapshot.MissionName is not null,
+            missionTitle = _missionSnapshot.MissionName ?? "MedEvac mission",
+            missionPhase = _missionSnapshot.PhaseLabel ?? "--",
+            missionDialog = _missionSnapshot.DialogText ?? "",
+            missionStatus = _missionSnapshot.StatusText ?? "",
+            missionDot = _missionSnapshot.Outcome switch
+            {
+                "completed" => "ok",
+                "cancelled" => "warn",
+                _ => _missionSnapshot.IsActive ? "info" : "idle",
+            },
 
             startEnabled = _startButton.Enabled,
             finishEnabled = _finishButton.Enabled,
@@ -488,11 +532,26 @@ public sealed class MainForm : Form
         try
         {
             _startButton.Enabled = false;
+            await _missions.PollAsync();
+            if (_missions.CurrentMission is not null)
+            {
+                MessageBox.Show(
+                    this,
+                    "The required aircraft and EDDM are confirmed. The aircraft will now be repositioned to the scripted pickup scene and the MedEvac sequence will begin.",
+                    "Initialize MedEvac mission",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                await _missions.InitializeForFlightAsync();
+                // Do not activate the tracked flight from telemetry captured
+                // before repositioning. The next simulator sample establishes
+                // the mission's real starting position.
+                _latestTelemetry = null;
+            }
             _flight.BeginLoading();
             _flightStatusLabel.Text = FlightStatusText();
             UpdateReadiness();
             SendStateToJS();
-            if (_flight.LoadsMatch(_contract, _latestTelemetry))
+            if (_latestTelemetry is not null && _flight.LoadsMatch(_contract, _latestTelemetry))
             {
                 await ActivateLoadedFlightAsync(_contract, _latestTelemetry);
             }

@@ -6,6 +6,8 @@ internal sealed class SimConnectUnavailableService : ISimulatorConnection
 {
     public bool IsConnected => false;
 
+    public bool SupportsObjectSpawning => false;
+
     public string StatusMessage =>
         "SimConnect support was not included in this build. Install the MSFS 2024 SDK and rebuild.";
 
@@ -31,6 +33,31 @@ internal sealed class SimConnectUnavailableService : ISimulatorConnection
     }
 
     public void RequestAircraftIdentity() =>
+        throw new InvalidOperationException(
+            "SimConnect support was not included in this build. Install the MSFS 2024 SDK and rebuild.");
+
+    public Task<uint> SpawnGroundObjectAsync(
+        string containerTitle,
+        double latitudeDegrees,
+        double longitudeDegrees,
+        double altitudeFeet,
+        double headingDegrees) =>
+        throw new InvalidOperationException(
+            "SimConnect support was not included in this build. Install the MSFS 2024 SDK and rebuild.");
+
+    public Task RemoveGroundObjectAsync(uint objectId) =>
+        throw new InvalidOperationException(
+            "SimConnect support was not included in this build. Install the MSFS 2024 SDK and rebuild.");
+
+    public void FreezeGroundObject(uint objectId) =>
+        throw new InvalidOperationException(
+            "SimConnect support was not included in this build. Install the MSFS 2024 SDK and rebuild.");
+
+    public void SetUserAircraftPosition(MissionTeleport position) =>
+        throw new InvalidOperationException(
+            "SimConnect support was not included in this build. Install the MSFS 2024 SDK and rebuild.");
+
+    public void SetMissionCamera(MissionCamera camera) =>
         throw new InvalidOperationException(
             "SimConnect support was not included in this build. Install the MSFS 2024 SDK and rebuild.");
 

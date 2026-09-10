@@ -151,6 +151,17 @@ body{padding:24px 28px 20px;display:flex;flex-direction:column;gap:16px;overflow
   </div>
 </div>
 
+<!-- mission state -->
+<div class="panel" id="missionPanel" style="display:none">
+  <div class="field-label">MedEvac mission <span class="dot idle" id="missionDot"></span></div>
+  <div class="field-value large" id="missionTitle" style="margin-top:6px">--</div>
+  <div class="field-label" style="margin-top:12px">Current phase</div>
+  <div class="field-value" id="missionPhase">--</div>
+  <div class="field-label" style="margin-top:12px">Briefing / dialog</div>
+  <div class="field-value" id="missionDialog">--</div>
+  <div class="field-value" id="missionStatus" style="margin-top:8px;color:var(--text3);font-size:12px">--</div>
+</div>
+
 <!-- actions -->
 <div class="load-row">
   <button class="btn secondary" id="payloadBtn" disabled onclick="post({action:'loadPayload'})">Load payload</button>
@@ -201,6 +212,16 @@ window.chrome?.webview?.addEventListener('message',function(e){
   setDot('stateDot',s.stateDot);
   setText('readyText',s.readyText||'');
   setDot('readyDot',s.readyDot);
+
+  var missionPanel=document.getElementById('missionPanel');
+  missionPanel.style.display=s.missionActive?'block':'none';
+  if(s.missionActive){
+    setText('missionTitle',s.missionTitle||'MedEvac mission');
+    setText('missionPhase',s.missionPhase||'--');
+    setText('missionDialog',s.missionDialog||'');
+    setText('missionStatus',s.missionStatus||'');
+    setDot('missionDot',s.missionDot);
+  }
 
   var sb=document.getElementById('startBtn');
   var fb=document.getElementById('finishBtn');

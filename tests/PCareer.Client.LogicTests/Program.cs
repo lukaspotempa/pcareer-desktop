@@ -1,6 +1,8 @@
 using PCareer.Client;
 using PCareer.Client.Models;
 using PCareer.Client.Services;
+using System.Text.Json;
+using PCareer.Client.LogicTests;
 
 Assert(
     PCareer.Client.Program.SelectServerUrl(
@@ -316,7 +318,156 @@ Assert(
     payloadController.Observe(changedPayloadSample)?.Contains("payload changed") == true,
     "A real payload-station weight change must still cancel an active flight.");
 
-Console.WriteLine("VPN desktop flight lifecycle checks passed.");
+// ── Mission phase driver guard rails ────────────────────────────────────
+var missionDriveTest = MissionTestData.NewActiveMission("pickup_scene");
+Assert(
+    MissionPhaseDriver.FindPhase(missionDriveTest, "delivery") is { } deliveryPhase
+        && MissionPhaseDriver.IsAction(deliveryPhase, MissionPhaseDriver.ActionCompleteMission),
+    "The delivery phase should carry the complete_mission action.");
+Assert(
+    MissionPhaseDriver.NextPhase(missionDriveTest)?.Id == "departure",
+    "The next phase should follow the authoring order.");
+Assert(
+    MissionPhaseDriver.NextPhase(MissionTestData.NewActiveMission("delivery")) is null,
+    "The final phase must have no successor.");
+Assert(
+    MissionPhaseDriver.DialogText(missionDriveTest) == "The medics are loading the patient.",
+    "The current phase dialog should resolve through its identifier.");
+Assert(
+    MissionPhaseDriver.PhaseElapsedSeconds(
+        missionDriveTest with
+        {
+            PhaseData = new Dictionary<string, JsonElement>
+            {
+                ["phase_started_at"] = JsonSerializer.SerializeToElement(
+                    DateTimeOffset.UtcNow.AddSeconds(-40)),
+            },
+        },
+        DateTimeOffset.UtcNow) is { } phaseElapsed
+        && phaseElapsed >= 39.9
+        && phaseElapsed <= 41,
+    "The phase timer should be measured from the server phase start.");
+Assert(
+    MissionPhaseDriver.ObjectsForPhase(
+        missionDriveTest,
+        MissionPhaseDriver.FindPhase(missionDriveTest, "pickup_scene")!)
+        .Select(spec => spec.Id)
+        .SequenceEqual(new[] { "obj_stretcher", "obj_nurse", "obj_vehicle" }),
+    "spawn_objects should map authoring object identifiers to their full specifications.");
+
+// ── Ground object spawner ───────────────────────────────────────────────
+var fakeSimulator = new FakeSimulatorConnection(supportsObjectSpawning: true);
+var spawner = new GroundObjectSpawner(fakeSimulator);
+var spawnTestObject = MissionTestData.NewActiveMission("pickup_scene").Script.GroundObjects[0];
+Assert(
+    await spawner.TrySpawnAsync(spawnTestObject),
+    "An enabled simulator should spawn a documented ground object.");
+Assert(
+    fakeSimulator.SpawnCalls.SequenceEqual(new[] { "Stretcher trolley" })
+        && fakeSimulator.FreezeCalls.Count == 1,
+    "A frozen object should freeze exactly once after spawning.");
+Assert(
+    await spawner.TrySpawnAsync(spawnTestObject),
+    "Re-requesting an already spawned object should be a no-op success.");
+Assert(
+    fakeSimulator.SpawnCalls.Count == 1,
+    "Re-requesting an object must not spawn it twice.");
+await spawner.RemoveAsync(spawnTestObject.Id);
+Assert(
+    spawner.Spawned.Count == 0 && fakeSimulator.RemoveCalls.Count == 1,
+    "Removing a spawned object should clear it from the simulator and the tracker.");
+var disabledSimulator = new FakeSimulatorConnection(supportsObjectSpawning: false);
+var disabledSpawner = new GroundObjectSpawner(disabledSimulator);
+Assert(
+    !await disabledSpawner.TrySpawnAsync(spawnTestObject) && disabledSimulator.SpawnCalls.Count == 0,
+    "Without SimConnect support the spawner should fail cleanly without a hang.");
+
+// ── MedEvac mission flow ────────────────────────────────────────────────
+var missionSimulator = new FakeSimulatorConnection();
+var missionSpawner = new GroundObjectSpawner(missionSimulator);
+var missionClient = new FakeMissionClient();
+TelemetrySnapshot? latestLoaded = null;
+var completedOutcomeSeen = false;
+var executor = new MissionExecutor(missionClient, missionSimulator, missionSpawner, () => latestLoaded);
+executor.MissionChanged += (_, snapshot) =>
+{
+    if (snapshot.Outcome == "completed")
+    {
+        completedOutcomeSeen = true;
+    }
+};
+missionClient.Active = MissionTestData.NewActiveMission("briefing");
+
+await executor.PollAsync();
+Assert(
+    missionClient.EvaluateCalls == 0 && missionClient.AdvanceCalls == 0,
+    "Passive polling must leave the mission at its pre-flight briefing.");
+
+await executor.InitializeForFlightAsync();
+Assert(
+    missionClient.Active?.CurrentPhaseId == "pickup_scene"
+        && missionSimulator.PositionCalls.Count == 1
+        && missionSimulator.CameraCalls.Count == 1,
+    "Starting the flight must reposition the aircraft and initialize the scripted camera once.");
+
+latestLoaded = MissionTelemetry(
+    MissionTestData.PickupLatitude,
+    MissionTestData.PickupLongitude,
+    onGround: true);
+await executor.PollAsync();
+Assert(
+    missionClient.Active?.CurrentPhaseId == "en_route",
+    "After loading, departure telemetry must advance the mission to its route phase.");
+Assert(
+    missionSimulator.SpawnCalls.SequenceEqual(
+            new[] { "Stretcher trolley", "Nurse figure", "Ambulance vehicle" })
+        && missionSimulator.SpawnCalls.Count == 3
+        && missionSimulator.FreezeCalls.Count == 2
+        && missionSimulator.RemoveCalls.Count == 3,
+    "The loading phase should spawn every object (freezing two) and departure must remove them.");
+Assert(
+    missionClient.AdvanceCalls == 2,
+    "Scene initialization and the timed loading phase must each advance once.");
+Assert(
+    missionSpawner.Spawned.Count == 0,
+    "Removed stage objects must be released from the spawner.");
+
+latestLoaded = MissionTelemetry(
+    MissionTestData.DeliveryLatitude,
+    MissionTestData.DeliveryLongitude,
+    onGround: true);
+await executor.PollAsync();
+Assert(
+    !completedOutcomeSeen && missionClient.CompleteCalls == 0 && missionClient.Active?.CurrentPhaseId == "delivery",
+    "Reaching delivery must wait for flight settlement without completing the contract.");
+
+missionClient.Active = null;
+await executor.PollAsync();
+missionClient.Active = MissionTestData.NewActiveMission("briefing");
+await executor.PollAsync();
+await executor.InitializeForFlightAsync();
+
+latestLoaded = MissionTelemetry(
+    MissionTestData.PickupLatitude,
+    MissionTestData.PickupLongitude,
+    onGround: true);
+await executor.PollAsync();
+Assert(
+    missionClient.Active?.CurrentPhaseId == "en_route",
+    "A second mission on the same script must drive through the same phases again.");
+Assert(
+    missionSimulator.SpawnCalls.Count == 6 && missionSimulator.RemoveCalls.Count == 6,
+    "A repeated mission must respawn and remove the stage objects after a clean reset.");
+latestLoaded = MissionTelemetry(
+    MissionTestData.DeliveryLatitude,
+    MissionTestData.DeliveryLongitude,
+    onGround: true);
+await executor.PollAsync();
+Assert(
+    missionClient.CompleteCalls == 0,
+    "Mission progression must never settle contracts independently.");
+
+Console.WriteLine("VPN desktop mission lifecycle checks passed.");
 return;
 
 static TelemetrySnapshot Sample(
@@ -349,6 +500,34 @@ static TelemetrySnapshot Sample(
     GearPositionPercent: 100,
     ParkingBrakeSet: onGround,
     PayloadStationWeightPounds: (2300d - 1663d) - 108.9d / 0.45359237d);
+
+static TelemetrySnapshot MissionTelemetry(
+    double latitudeDegrees,
+    double longitudeDegrees,
+    bool onGround) => new(
+    ObservedAt: DateTimeOffset.UtcNow,
+    AircraftTitle: "Cessna 208B Grand Caravan EX",
+    AircraftAtcModel: "C208",
+    AircraftAtcType: "Cessna",
+    LatitudeDegrees: latitudeDegrees,
+    LongitudeDegrees: longitudeDegrees,
+    AltitudeFeet: 2500,
+    AltitudeAglFeet: onGround ? 5 : 800,
+    IndicatedAirspeedKnots: onGround ? 0 : 120,
+    GroundSpeedKnots: onGround ? 0 : 125,
+    VerticalSpeedFeetPerMinute: 0,
+    HeadingTrueDegrees: 90,
+    PitchDegrees: 0,
+    BankDegrees: 0,
+    OnGround: onGround,
+    SlewActive: false,
+    SimulationRate: 1,
+    FuelTotalKg: 500,
+    TotalWeightPounds: 8200,
+    EmptyWeightPounds: 4500,
+    EngineCount: 1,
+    GearPositionPercent: 100,
+    ParkingBrakeSet: onGround);
 
 static void Assert(bool condition, string message)
 {

@@ -2,7 +2,7 @@
 #pragma warning disable CS0067
 namespace Microsoft.FlightSimulator.SimConnect;
 
-public enum SIMCONNECT_DATATYPE { FLOAT64, INT32, STRING256 }
+public enum SIMCONNECT_DATATYPE { FLOAT64, INT32, STRING256, INITPOSITION }
 public enum SIMCONNECT_PERIOD { SIM_FRAME, ONCE }
 public enum SIMCONNECT_DATA_REQUEST_FLAG { DEFAULT }
 public enum SIMCONNECT_DATA_SET_FLAG { DEFAULT }
@@ -19,6 +19,23 @@ public sealed class SIMCONNECT_RECV_SIMOBJECT_DATA : SIMCONNECT_RECV
     public uint dwRequestID;
     public object[] dwData = [];
 }
+public sealed class SIMCONNECT_RECV_ASSIGNED_OBJECT_ID : SIMCONNECT_RECV
+{
+    public uint dwRequestID;
+    public uint dwObjectID;
+}
+
+public struct SIMCONNECT_DATA_INITPOSITION
+{
+    public double Latitude;
+    public double Longitude;
+    public double Altitude;
+    public double Pitch;
+    public double Bank;
+    public double Heading;
+    public uint OnGround;
+    public uint Airspeed;
+}
 
 public sealed class SimConnect : IDisposable
 {
@@ -31,11 +48,20 @@ public sealed class SimConnect : IDisposable
     public event Action<SimConnect, SIMCONNECT_RECV>? OnRecvQuit;
     public event Action<SimConnect, SIMCONNECT_RECV_EXCEPTION>? OnRecvException;
     public event Action<SimConnect, SIMCONNECT_RECV_SIMOBJECT_DATA>? OnRecvSimobjectData;
+    public event Action<SimConnect, SIMCONNECT_RECV_ASSIGNED_OBJECT_ID>? OnRecvAssignedObjectId;
 
     public void AddToDataDefinition(Enum definitionId, string name, string? units, SIMCONNECT_DATATYPE dataType, float epsilon, uint datumId) { }
     public void RegisterDataDefineStruct<T>(Enum definitionId) where T : struct { }
     public void RequestDataOnSimObject(Enum requestId, Enum definitionId, uint objectId, SIMCONNECT_PERIOD period, SIMCONNECT_DATA_REQUEST_FLAG flags, uint origin, uint interval, uint limit) { }
     public void SetDataOnSimObject(Enum definitionId, uint objectId, SIMCONNECT_DATA_SET_FLAG flags, object data) { }
+    public const uint SIMCONNECT_GROUP_PRIORITY_HIGHEST = 1;
+    public void AICreateSimulatedObject_EX1(string szContainerTitle, string? szLivery, SIMCONNECT_DATA_INITPOSITION InitPos, Enum RequestID) { }
+    public void AIRemoveObject(uint ObjectID, Enum RequestID) { }
+    public void MapClientEventToSimEvent(Enum eventId, string eventName) { }
+    public void TransmitClientEvent(uint objectId, Enum eventId, uint data, Enum groupId, SIMCONNECT_EVENT_FLAG flags) { }
+    public void CameraSetRelative6DOF(float x, float y, float z, float pitch, float bank, float heading) { }
     public void ReceiveMessage() { }
     public void Dispose() { }
 }
+
+public enum SIMCONNECT_EVENT_FLAG { GROUPID_IS_PRIORITY = 16 }

@@ -6,7 +6,7 @@ using PCareer.Client.Models;
 
 namespace PCareer.Client.Services;
 
-public sealed class PCareerApiClient : IFlightServerClient, IDisposable
+public sealed class PCareerApiClient : IFlightServerClient, IMissionClient, IDisposable
 {
     private static readonly TimeSpan TelemetryInterval = TimeSpan.FromSeconds(5);
     private readonly HttpClient _http;
@@ -206,6 +206,72 @@ public sealed class PCareerApiClient : IFlightServerClient, IDisposable
             cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
         TelemetryStatusChanged?.Invoke(this, $"Flight cancelled: {reason}");
+    }
+
+    public async Task<MissionState?> GetActiveMissionAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await SendAuthenticatedAsync(
+            () => new HttpRequestMessage(HttpMethod.Get, "api/missions/active"),
+            cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NoContent)
+        {
+            return null;
+        }
+
+        var body = await ReadRequiredAsync<MissionStateDto>(response, cancellationToken);
+        return body.ToModel();
+    }
+
+    public async Task<MissionState> AdvanceMissionAsync(
+        string contractId,
+        string phaseId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await SendAuthenticatedAsync(
+            () => JsonRequest(
+                HttpMethod.Post,
+                "api/missions/advance",
+                new { contract_id = contractId, phase_id = phaseId }),
+            cancellationToken);
+        var body = await ReadRequiredAsync<MissionStateDto>(response, cancellationToken);
+        return body.ToModel();
+    }
+
+    public async Task<MissionState> EvaluateMissionTriggerAsync(
+        string contractId,
+        TelemetrySnapshot telemetry,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await SendAuthenticatedAsync(
+            () => JsonRequest(
+                HttpMethod.Post,
+                "api/missions/evaluate",
+                new
+                {
+                    contract_id = contractId,
+                    latitude_degrees = telemetry.LatitudeDegrees,
+                    longitude_degrees = telemetry.LongitudeDegrees,
+                    altitude_ft = telemetry.AltitudeFeet,
+                    on_ground = telemetry.OnGround,
+                }),
+            cancellationToken);
+        var body = await ReadRequiredAsync<MissionStateDto>(response, cancellationToken);
+        return body.ToModel();
+    }
+
+    public async Task<MissionCompleteResult> CompleteMissionAsync(
+        string contractId,
+        string completionType,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await SendAuthenticatedAsync(
+            () => JsonRequest(
+                HttpMethod.Post,
+                "api/missions/complete",
+                new { contract_id = contractId, completion_type = completionType }),
+            cancellationToken);
+        var body = await ReadRequiredAsync<MissionCompleteResultDto>(response, cancellationToken);
+        return body.ToModel();
     }
 
     public async Task LogoutAsync(CancellationToken cancellationToken = default)
@@ -470,6 +536,186 @@ public sealed class PCareerApiClient : IFlightServerClient, IDisposable
         string ModelCode,
         string ModelDisplayName,
         string IcaoTypeDesignator);
+
+    private sealed record MissionStateDto(
+        int Id,
+        int ScriptId,
+        MissionScriptDto Script,
+        string Status,
+        string CurrentPhaseId,
+        Dictionary<string, JsonElement>? PhaseData,
+        List<GroundObjectSpecDto> SpawnedObjects,
+        DateTimeOffset StartedAt,
+        DateTimeOffset? CompletedAt,
+        string? ContractId)
+    {
+        public MissionState ToModel() => new(
+            Id,
+            ScriptId,
+            Script.ToModel(),
+            Status,
+            CurrentPhaseId,
+            PhaseData,
+            (SpawnedObjects ?? [])
+                .Select(spec => spec.ToModel())
+                .ToArray(),
+            StartedAt,
+            CompletedAt,
+            ContractId);
+    }
+
+    private sealed record MissionScriptDto(
+        int Id,
+        string Code,
+        string Name,
+        string Description,
+        string AircraftIcao,
+        AirfieldRefDto PickupAirport,
+        AirfieldRefDto DeliveryAirport,
+        int EstimatedDurationMin,
+        List<GroundObjectSpecDto>? GroundObjects,
+        List<MissionPhaseDto>? MissionSequence,
+        List<MissionDialogLineDto> DialogLines,
+        string? WeatherPreset,
+        int BaseRewardCents,
+        int CancellationFeeCents,
+        bool IsActive)
+    {
+        public MissionScriptData ToModel() => new(
+            Id,
+            Code,
+            Name,
+            Description,
+            AircraftIcao,
+            PickupAirport.ToModel(),
+            DeliveryAirport.ToModel(),
+            EstimatedDurationMin,
+            (GroundObjects ?? [])
+                .Select(spec => spec.ToModel())
+                .ToArray(),
+            (MissionSequence ?? [])
+                .Select(phase => phase.ToModel())
+                .ToArray(),
+            (DialogLines ?? []).Select(line => line.ToModel()).ToArray(),
+            WeatherPreset,
+            BaseRewardCents,
+            CancellationFeeCents,
+            IsActive);
+    }
+
+    private sealed record AirfieldRefDto(
+        int Id,
+        string Icao,
+        string Name,
+        double Latitude,
+        double Longitude)
+    {
+        public MissionAirfield ToModel() => new(Id, Icao, Name, Latitude, Longitude);
+    }
+
+    private sealed record GroundObjectSpecDto(
+        string Id,
+        string ObjectType,
+        string Title,
+        GroundObjectPositionDto Position,
+        double HeadingDegrees,
+        bool Freeze)
+    {
+        public MissionGroundObject ToModel() =>
+            new(Id, ObjectType, Title, Position.ToModel(), HeadingDegrees, Freeze);
+    }
+
+    private sealed record GroundObjectPositionDto(double Lat, double Lon, double AltM)
+    {
+        public MissionPosition ToModel() => new(Lat, Lon, AltM);
+    }
+
+    private sealed record MissionPhaseDto(
+        string Id,
+        string Label,
+        string? Action,
+        List<MissionWaypointDto>? Waypoints,
+        MissionTriggerDto? Trigger,
+        double? DurationSec,
+        string? DialogId,
+        MissionCameraDto? Camera,
+        MissionTeleportDto? Teleport,
+        List<string> ObjectIds)
+    {
+        public MissionPhase ToModel() => new(
+            Id,
+            Label,
+            Action,
+            (Waypoints ?? [])
+                .Select(waypoint => waypoint.ToModel())
+                .ToArray(),
+            Trigger?.ToModel(),
+            DurationSec,
+            DialogId,
+            Camera?.ToModel(),
+            Teleport?.ToModel(),
+            ObjectIds ?? []);
+    }
+
+    private sealed record MissionWaypointDto(double Lat, double Lon)
+    {
+        public MissionWaypoint ToModel() => new(Lat, Lon);
+    }
+
+    private sealed record MissionTriggerDto(
+        string Type,
+        double? Lat,
+        double? Lon,
+        double? RadiusM,
+        double? MinAltitudeFt,
+        bool? OnGround,
+        double? ElapsedSec)
+    {
+        public MissionTrigger ToModel() =>
+            new(Type, Lat, Lon, RadiusM, MinAltitudeFt, OnGround, ElapsedSec);
+    }
+
+    private sealed record MissionCameraDto(
+        string? TargetObjectId,
+        double OffsetMX,
+        double OffsetMY,
+        double OffsetMZ,
+        double? FovDegrees,
+        double TransitionSec)
+    {
+        public MissionCamera ToModel() =>
+            new(TargetObjectId, OffsetMX, OffsetMY, OffsetMZ, FovDegrees, TransitionSec);
+    }
+
+    private sealed record MissionTeleportDto(
+        double Lat,
+        double Lon,
+        double AltitudeFt,
+        double HeadingDegrees,
+        bool OnGround)
+    {
+        public MissionTeleport ToModel() =>
+            new(Lat, Lon, AltitudeFt, HeadingDegrees, OnGround);
+    }
+
+    private sealed record MissionDialogLineDto(
+        string Id,
+        string Text,
+        string? Speaker,
+        string? AudioHint)
+    {
+        public MissionDialogLine ToModel() => new(Id, Text, Speaker, AudioHint);
+    }
+
+    private sealed record MissionCompleteResultDto(
+        int MissionStateId,
+        string Status,
+        int RewardCents,
+        string Message)
+    {
+        public MissionCompleteResult ToModel() =>
+            new(MissionStateId, Status, RewardCents, Message);
+    }
 
     private sealed record ApiError(string Detail);
 }

@@ -10,13 +10,23 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
     private enum DataDefinition
     {
         UserAircraft,
-        AircraftIdentity
+        AircraftIdentity,
+        UserAircraftPosition
     }
 
     private enum DataRequest
     {
         UserAircraft,
         AircraftIdentity
+    }
+
+    private enum GroundObjectRequest { }
+
+    private enum GroundObjectFreezeDefinition
+    {
+        LatitudeLongitude = 600,
+        Attitude = 601,
+        Altitude = 602
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi, Pack = 1)]
@@ -126,11 +136,16 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
     private readonly double[] _modernFuelTankCapacities = new double[20];
     private readonly double[] _legacyFuelTankCapacities = new double[11];
     private readonly HashSet<int> _definedWriteDefinitions = [];
+    private readonly HashSet<int> _definedGroundObjectDefinitions = [];
+    private readonly Dictionary<uint, TaskCompletionSource<uint>> _objectSpawnRequests = [];
+    private int _nextObjectRequestId = 10000;
     private string _aircraftTitle = string.Empty;
     private string _aircraftAtcModel = string.Empty;
     private string _aircraftAtcType = string.Empty;
 
     public bool IsConnected { get; private set; }
+
+    public bool SupportsObjectSpawning => true;
 
     public string StatusMessage { get; private set; } = "Microsoft Flight Simulator is not running.";
 
@@ -160,6 +175,7 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
             connection.OnRecvQuit += OnQuit;
             connection.OnRecvException += OnException;
             connection.OnRecvSimobjectData += OnSimObjectData;
+            connection.OnRecvAssignedObjectId += OnAssignedObjectId;
             _simConnect = connection;
             StatusMessage = "Connecting to Microsoft Flight Simulator…";
         }
@@ -377,6 +393,149 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
             0,
             0,
             0);
+    }
+
+    public Task<uint> SpawnGroundObjectAsync(
+        string containerTitle,
+        double latitudeDegrees,
+        double longitudeDegrees,
+        double altitudeFeet,
+        double headingDegrees)
+    {
+        var connection = _simConnect
+            ?? throw new InvalidOperationException("Microsoft Flight Simulator is not connected.");
+        if (string.IsNullOrWhiteSpace(containerTitle))
+        {
+            throw new ArgumentException("The object container title must not be empty.", nameof(containerTitle));
+        }
+
+        var requestId = (uint)Interlocked.Increment(ref _nextObjectRequestId);
+        var completion = new TaskCompletionSource<uint>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _objectSpawnRequests[requestId] = completion;
+        try
+        {
+            connection.AICreateSimulatedObject_EX1(
+                containerTitle,
+                null,
+                new SIMCONNECT_DATA_INITPOSITION
+                {
+                    Latitude = latitudeDegrees,
+                    Longitude = longitudeDegrees,
+                    Altitude = altitudeFeet,
+                    Pitch = 0d,
+                    Bank = 0d,
+                    Heading = headingDegrees,
+                    OnGround = 1,
+                    Airspeed = 0,
+                },
+                (GroundObjectRequest)requestId);
+        }
+        catch
+        {
+            _objectSpawnRequests.Remove(requestId);
+            throw;
+        }
+        return completion.Task;
+    }
+
+    public Task RemoveGroundObjectAsync(uint objectId)
+    {
+        var connection = _simConnect
+            ?? throw new InvalidOperationException("Microsoft Flight Simulator is not connected.");
+        connection.AIRemoveObject(objectId, (GroundObjectRequest)Interlocked.Increment(ref _nextObjectRequestId));
+        return Task.CompletedTask;
+    }
+
+    public void FreezeGroundObject(uint objectId)
+    {
+        var connection = _simConnect
+            ?? throw new InvalidOperationException("Microsoft Flight Simulator is not connected.");
+        WriteGroundObjectValue(
+            connection,
+            objectId,
+            GroundObjectFreezeDefinition.LatitudeLongitude,
+            "FREEZE_LATITUDE_LONGITUDE_SET");
+        WriteGroundObjectValue(
+            connection,
+            objectId,
+            GroundObjectFreezeDefinition.Attitude,
+            "FREEZE_ATTITUDE_SET");
+        WriteGroundObjectValue(
+            connection,
+            objectId,
+            GroundObjectFreezeDefinition.Altitude,
+            "FREEZE_ALTITUDE_SET");
+    }
+
+    public void SetUserAircraftPosition(MissionTeleport position)
+    {
+        var connection = _simConnect
+            ?? throw new InvalidOperationException("Microsoft Flight Simulator is not connected.");
+        if (!double.IsFinite(position.Lat)
+            || !double.IsFinite(position.Lon)
+            || !double.IsFinite(position.AltitudeFt)
+            || !double.IsFinite(position.HeadingDegrees))
+        {
+            throw new ArgumentOutOfRangeException(nameof(position), "Mission position must be finite.");
+        }
+
+        if (_definedWriteDefinitions.Add((int)DataDefinition.UserAircraftPosition))
+        {
+            connection.AddToDataDefinition(
+                DataDefinition.UserAircraftPosition,
+                "Initial Position",
+                null,
+                SIMCONNECT_DATATYPE.INITPOSITION,
+                0,
+                SimConnect.SIMCONNECT_UNUSED);
+            connection.RegisterDataDefineStruct<SIMCONNECT_DATA_INITPOSITION>(
+                DataDefinition.UserAircraftPosition);
+        }
+
+        connection.SetDataOnSimObject(
+            DataDefinition.UserAircraftPosition,
+            SimConnect.SIMCONNECT_OBJECT_ID_USER,
+            SIMCONNECT_DATA_SET_FLAG.DEFAULT,
+            new SIMCONNECT_DATA_INITPOSITION
+            {
+                Latitude = position.Lat,
+                Longitude = position.Lon,
+                Altitude = position.AltitudeFt,
+                Pitch = 0,
+                Bank = 0,
+                Heading = position.HeadingDegrees,
+                OnGround = position.OnGround ? 1u : 0u,
+                Airspeed = 0,
+            });
+    }
+
+    public void SetMissionCamera(MissionCamera camera)
+    {
+        var connection = _simConnect
+            ?? throw new InvalidOperationException("Microsoft Flight Simulator is not connected.");
+        connection.CameraSetRelative6DOF(
+            (float)camera.OffsetMX,
+            (float)camera.OffsetMY,
+            (float)camera.OffsetMZ,
+            0,
+            0,
+            0);
+    }
+
+    private void WriteGroundObjectValue(
+        SimConnect connection,
+        uint objectId,
+        GroundObjectFreezeDefinition definition,
+        string name)
+    {
+        var definitionId = (int)definition;
+        if (_definedGroundObjectDefinitions.Add(definitionId))
+        {
+            connection.MapClientEventToSimEvent(definition, name);
+        }
+        connection.TransmitClientEvent(objectId, definition, 1,
+            (GroundObjectFreezeDefinition)SimConnect.SIMCONNECT_GROUP_PRIORITY_HIGHEST,
+            SIMCONNECT_EVENT_FLAG.GROUPID_IS_PRIORITY);
     }
 
     public void SetPayloadKilograms(double payloadKilograms)
@@ -626,6 +785,14 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
         }
     }
 
+    private void OnAssignedObjectId(SimConnect sender, SIMCONNECT_RECV_ASSIGNED_OBJECT_ID data)
+    {
+        if (_objectSpawnRequests.Remove(data.dwRequestID, out var completion))
+        {
+            completion.TrySetResult(data.dwObjectID);
+        }
+    }
+
     private void OnSimObjectData(SimConnect sender, SIMCONNECT_RECV_SIMOBJECT_DATA data)
     {
         if (data.dwData.Length == 0)
@@ -779,8 +946,16 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
         Array.Clear(_modernFuelTankCapacities);
         Array.Clear(_legacyFuelTankCapacities);
         _definedWriteDefinitions.Clear();
+        _definedGroundObjectDefinitions.Clear();
+        foreach (var completion in _objectSpawnRequests.Values)
+        {
+            completion.TrySetException(
+                new InvalidOperationException("The simulator connection was closed before the object spawned."));
+        }
+        _objectSpawnRequests.Clear();
         if (connection is not null)
         {
+            connection.OnRecvAssignedObjectId -= OnAssignedObjectId;
             try
             {
                 connection.Dispose();
