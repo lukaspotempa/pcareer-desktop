@@ -160,12 +160,14 @@ body{padding:24px 28px 20px;display:flex;flex-direction:column;gap:16px;overflow
   <div class="field-label" style="margin-top:12px">Briefing / dialog</div>
   <div class="field-value" id="missionDialog">--</div>
   <div class="field-value" id="missionStatus" hidden style="margin-top:8px;color:var(--text3);font-size:12px">--</div>
-  <div class="field-label" style="margin-top:12px">Simulator scene diagnostics</div>
-  <div class="field-value" id="missionDiagnostics" style="white-space:pre-wrap;font-family:Consolas,monospace;font-size:11px">No scene commands recorded.</div>
-  <button class="btn secondary" id="reloadMissionSceneBtn" style="width:100%;margin-top:14px" disabled
-    onclick="post({action:'reloadMissionScene'})">Reload mission scene</button>
-  <button class="btn secondary" id="advanceMissionPhaseBtn" style="width:100%;margin-top:8px" disabled
-    onclick="post({action:'advanceMissionPhase'})">Next phase</button>
+  <div id="missionDevelopment" style="display:none">
+    <div class="field-label" style="margin-top:12px">Simulator scene diagnostics</div>
+    <div class="field-value" id="missionDiagnostics" style="white-space:pre-wrap;font-family:Consolas,monospace;font-size:11px">No scene commands recorded.</div>
+    <button class="btn secondary" id="reloadMissionSceneBtn" style="width:100%;margin-top:14px" disabled
+      onclick="post({action:'reloadMissionScene'})">Reload mission scene</button>
+    <button class="btn secondary" id="advanceMissionPhaseBtn" style="width:100%;margin-top:8px" disabled
+      onclick="post({action:'advanceMissionPhase'})">Next phase</button>
+  </div>
 </div>
 
 <!-- actions -->
@@ -227,9 +229,13 @@ window.chrome?.webview?.addEventListener('message',function(e){
     setText('missionDialog',s.missionDialog||'');
     setText('missionStatus',s.missionStatus||'');
     document.getElementById('missionStatus').hidden=!s.developmentMode;
-    setText('missionDiagnostics',s.missionDiagnostics||'No scene commands recorded.');
-    document.getElementById('reloadMissionSceneBtn').disabled=!s.reloadMissionSceneEnabled;
-    document.getElementById('advanceMissionPhaseBtn').disabled=!s.advanceMissionPhaseEnabled;
+    var missionDevelopment=document.getElementById('missionDevelopment');
+    missionDevelopment.style.display=s.developmentMode?'block':'none';
+    if(s.developmentMode){
+      setText('missionDiagnostics',s.missionDiagnostics||'No scene commands recorded.');
+      document.getElementById('reloadMissionSceneBtn').disabled=!s.reloadMissionSceneEnabled;
+      document.getElementById('advanceMissionPhaseBtn').disabled=!s.advanceMissionPhaseEnabled;
+    }
     setDot('missionDot',s.missionDot);
   }
 

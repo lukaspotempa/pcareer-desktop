@@ -151,13 +151,13 @@ public sealed class MainForm : Form
             case "loadFuel":
                 LoadFuelClicked();
                 break;
+#if DEBUG
             case "reloadMissionScene":
                 _ = ReloadMissionSceneClickedAsync();
                 break;
             case "advanceMissionPhase":
                 _ = AdvanceMissionPhaseClickedAsync();
                 break;
-#if DEBUG
             case "transmitAircraft":
                 TransmitAircraftClicked(this, EventArgs.Empty);
                 break;
@@ -223,9 +223,6 @@ public sealed class MainForm : Form
             missionPhase = _missionSnapshot.PhaseLabel ?? "--",
             missionDialog = _missionSnapshot.DialogText ?? "",
             missionStatus = _missionSnapshot.StatusText ?? "",
-            missionDiagnostics = string.Join("\n", _simulator.MissionDiagnostics),
-            reloadMissionSceneEnabled = _missions.CanReloadScene,
-            advanceMissionPhaseEnabled = _missions.CanAdvanceToNextPhase,
             missionDot = _missionSnapshot.Outcome switch
             {
                 "completed" => "ok",
@@ -245,6 +242,9 @@ public sealed class MainForm : Form
                 : "Load fuel  ·  no target",
 #if DEBUG
             developmentMode = true,
+            missionDiagnostics = string.Join("\n", _simulator.MissionDiagnostics),
+            reloadMissionSceneEnabled = _missions.CanReloadScene,
+            advanceMissionPhaseEnabled = _missions.CanAdvanceToNextPhase,
             transmitAircraftEnabled = _transmitButton.Enabled,
             position = _positionLabel.Text,
             altitude = _altitudeLabel.Text,
@@ -617,6 +617,7 @@ public sealed class MainForm : Form
         }
     }
 
+#if DEBUG
     private async Task ReloadMissionSceneClickedAsync()
     {
         try
@@ -654,6 +655,7 @@ public sealed class MainForm : Form
             SendStateToJS();
         }
     }
+#endif
 
     private async Task ActivateLoadedFlightAsync(
         ContractAssignment contract,
