@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text.Json;
 using PCareer.Client.Models;
 
@@ -15,13 +16,16 @@ public sealed class PCareerApiClient : IFlightServerClient, IMissionClient, IDis
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
     };
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
+    private readonly DesktopSessionStore _sessionStore;
     private DesktopSession? _session;
+    private DateTimeOffset? _sessionPersistenceDeadline;
     private DateTimeOffset _lastTelemetryQueuedAt = DateTimeOffset.MinValue;
     private string? _lastTelemetryRejection;
     private int _telemetryUploadInProgress;
 
-    public PCareerApiClient(Uri serverBaseUri)
+    public PCareerApiClient(Uri serverBaseUri, DesktopSessionStore? sessionStore = null)
     {
+        _sessionStore = sessionStore ?? new DesktopSessionStore();
         _http = new HttpClient
         {
             BaseAddress = serverBaseUri,
@@ -34,6 +38,36 @@ public sealed class PCareerApiClient : IFlightServerClient, IMissionClient, IDis
     public event EventHandler<TelemetryRejectedEventArgs>? TelemetryRejected;
 
     public DesktopSession? Session => _session;
+
+    public async Task<DesktopSession?> RestoreSessionAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var persisted = _sessionStore.Load();
+        if (persisted is null)
+        {
+            return null;
+        }
+
+        _session = persisted.Session;
+        _sessionPersistenceDeadline = persisted.PersistUntil;
+        try
+        {
+            await EnsureFreshAccessTokenAsync(cancellationToken);
+            return _session;
+        }
+        catch (HttpRequestException exception)
+            when (exception.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            ClearSession();
+            return null;
+        }
+        catch
+        {
+            _session = null;
+            _sessionPersistenceDeadline = null;
+            return null;
+        }
+    }
 
     public async Task<DesktopLoginRequest> BeginDiscordLoginAsync(
         CancellationToken cancellationToken = default)
@@ -67,6 +101,7 @@ public sealed class PCareerApiClient : IFlightServerClient, IMissionClient, IDis
 
         var body = await ReadRequiredAsync<SessionDto>(response, cancellationToken);
         _session = ToSession(body);
+        PersistSession();
         return _session;
     }
 
@@ -293,6 +328,7 @@ public sealed class PCareerApiClient : IFlightServerClient, IMissionClient, IDis
     {
         if (_session is null)
         {
+            _sessionStore.Clear();
             return;
         }
 
@@ -306,7 +342,7 @@ public sealed class PCareerApiClient : IFlightServerClient, IMissionClient, IDis
         }
         finally
         {
-            _session = null;
+            ClearSession();
         }
     }
 
@@ -417,8 +453,18 @@ public sealed class PCareerApiClient : IFlightServerClient, IMissionClient, IDis
                 new { refresh_token = _session.RefreshToken },
                 _json,
                 cancellationToken);
-            var body = await ReadRequiredAsync<SessionDto>(response, cancellationToken);
-            _session = ToSession(body);
+            try
+            {
+                var body = await ReadRequiredAsync<SessionDto>(response, cancellationToken);
+                _session = ToSession(body);
+                PersistSession(_sessionPersistenceDeadline);
+            }
+            catch (HttpRequestException exception)
+                when (exception.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                ClearSession();
+                throw;
+            }
         }
         finally
         {
@@ -485,6 +531,40 @@ public sealed class PCareerApiClient : IFlightServerClient, IMissionClient, IDis
             body.User.DisplayName,
             body.User.AvatarUrl),
     };
+
+    private void ClearSession()
+    {
+        _session = null;
+        _sessionPersistenceDeadline = null;
+        _sessionStore.Clear();
+    }
+
+    private void PersistSession(DateTimeOffset? existingDeadline = null)
+    {
+        if (_session is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _sessionPersistenceDeadline = _sessionStore.Save(
+                _session,
+                existingDeadline);
+        }
+        catch (IOException)
+        {
+            _sessionPersistenceDeadline = existingDeadline;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            _sessionPersistenceDeadline = existingDeadline;
+        }
+        catch (CryptographicException)
+        {
+            _sessionPersistenceDeadline = existingDeadline;
+        }
+    }
 
     public void Dispose()
     {

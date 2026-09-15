@@ -73,13 +73,18 @@ internal static class Program
         }
 
         using var api = new PCareerApiClient(serverUri);
-        using var login = new LoginForm(api);
-        if (login.ShowDialog() != DialogResult.OK || login.Session is null)
+        var session = api.RestoreSessionAsync().GetAwaiter().GetResult();
+        if (session is null)
         {
-            return 0;
+            using var login = new LoginForm(api);
+            if (login.ShowDialog() != DialogResult.OK || login.Session is null)
+            {
+                return 0;
+            }
+            session = login.Session;
         }
 
-        Application.Run(new MainForm(api, login.Session));
+        Application.Run(new MainForm(api, session));
         return 0;
     }
 

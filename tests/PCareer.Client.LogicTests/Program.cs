@@ -21,6 +21,45 @@ Assert(
         == PCareer.Client.Program.ProductionServerUrl,
     "An empty development override should fall back to the production server.");
 
+var sessionStoreDirectory = Path.Combine(
+    Path.GetTempPath(),
+    $"vpn-session-store-{Guid.NewGuid():N}");
+var sessionStorePath = Path.Combine(sessionStoreDirectory, "session.dat");
+var sessionStore = new DesktopSessionStore(sessionStorePath);
+var now = DateTimeOffset.UtcNow;
+var desktopSession = new DesktopSession
+{
+    AccessToken = "access-token",
+    AccessExpiresAt = now.AddMinutes(15),
+    RefreshToken = "refresh-token",
+    RefreshExpiresAt = now.AddDays(10),
+    User = new AuthenticatedUser(1, "discord-id", "pilot", "Test Pilot", null),
+};
+try
+{
+    var persistenceDeadline = sessionStore.Save(desktopSession);
+    Assert(
+        persistenceDeadline <= now.AddDays(7).AddSeconds(1),
+        "Desktop sessions must never persist for longer than seven days.");
+    var restoredSession = sessionStore.Load();
+    Assert(
+        restoredSession?.Session.RefreshToken == desktopSession.RefreshToken,
+        "The encrypted desktop session should be restorable for the current Windows user.");
+
+    sessionStore.Save(desktopSession, now.AddSeconds(-1));
+    Assert(
+        sessionStore.Load() is null && !File.Exists(sessionStorePath),
+        "Expired persisted sessions must be removed instead of restored.");
+}
+finally
+{
+    sessionStore.Clear();
+    if (Directory.Exists(sessionStoreDirectory))
+    {
+        Directory.Delete(sessionStoreDirectory, recursive: true);
+    }
+}
+
 Assert(
     PortableUpdater.ParseVersion("v1.2.3") == new Version(1, 2, 3),
     "Portable update versions should accept the release tag format.");
