@@ -110,6 +110,8 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
         public double PayloadStation13WeightPounds;
         public double PayloadStation14WeightPounds;
         public double PayloadStation15WeightPounds;
+        public double GForce;
+        public double TouchdownNormalVelocityFeetPerSecond;
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi, Pack = 1)]
@@ -393,6 +395,12 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
                 $"PAYLOAD STATION WEIGHT:{station}",
                 "pounds");
         }
+        AddFloat64(connection, DataDefinition.UserAircraft, "G FORCE", "GForce");
+        AddFloat64(
+            connection,
+            DataDefinition.UserAircraft,
+            "PLANE TOUCHDOWN NORMAL VELOCITY",
+            "feet per second");
 
         connection.RegisterDataDefineStruct<UserAircraftData>(DataDefinition.UserAircraft);
         connection.RequestDataOnSimObject(
@@ -1067,7 +1075,10 @@ internal sealed class MsfsSimConnectService : ISimulatorConnection
                 EngineCount: sample.EngineCount,
                 GearPositionPercent: sample.GearPositionPercent,
                 ParkingBrakeSet: sample.ParkingBrakeSet != 0,
-                PayloadStationWeightPounds: payloadStationWeightPounds));
+                PayloadStationWeightPounds: payloadStationWeightPounds,
+                GForce: sample.GForce,
+                TouchdownNormalVelocityFeetPerSecond:
+                    sample.TouchdownNormalVelocityFeetPerSecond));
     }
 
     private void PublishIdentity(AircraftIdentityData sample)

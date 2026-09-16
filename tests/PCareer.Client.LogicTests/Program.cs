@@ -284,9 +284,19 @@ Assert(controller.Phase == FlightPhase.Started, "Start must enter Started.");
 controller.Observe(Sample(onGround: false, altitudeAgl: 800));
 Assert(controller.Phase == FlightPhase.Airborne, "Leaving the ground must enter Airborne.");
 
-controller.Observe(Sample(onGround: true, altitudeAgl: 8));
+controller.Observe(Sample(onGround: true, altitudeAgl: 8) with
+{
+    TouchdownNormalVelocityFeetPerSecond = -5,
+    GForce = 1.4,
+});
 Assert(controller.Phase == FlightPhase.Landed, "Touchdown must enter Landed.");
 Assert(controller.CanFinish, "A landed flight must be finishable.");
+Assert(
+    controller.LandingRateFeetPerMinute == 300,
+    "Touchdown normal velocity must be converted from feet per second to FPM.");
+Assert(
+    controller.LandingGForce == 1.4,
+    "Touchdown must capture the current G-force sample.");
 
 controller.Finish();
 Assert(controller.Phase == FlightPhase.Finished, "Finish must enter Finished.");
@@ -295,6 +305,9 @@ controller.ResetForNextFlight();
 Assert(controller.Phase == FlightPhase.Ready, "Reset must return the controller to Ready.");
 Assert(controller.FlightId is null, "Reset must clear the previous flight identifier.");
 Assert(controller.StartedAt is null, "Reset must clear the previous start time.");
+Assert(
+    controller.LandingRateFeetPerMinute is null && controller.LandingGForce is null,
+    "Reset must clear the previous landing values.");
 Assert(!controller.CanFinish, "A reset flight must not remain finishable.");
 Assert(
     controller.EvaluateReadiness(true, contract, onGround) == "Ready to begin loading.",

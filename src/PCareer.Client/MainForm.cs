@@ -22,6 +22,8 @@ public sealed class MainForm : Form
 
     private TelemetrySnapshot? _latestTelemetry;
     private ContractAssignment? _contract;
+    private FlightCompletion? _completion;
+    private double _completionPayloadKg;
     private ActiveFlightSession? _pendingActiveFlight;
     private MissionSnapshot _missionSnapshot = MissionSnapshots.Idle;
     private bool _recoveringFlightState = true;
@@ -85,6 +87,7 @@ public sealed class MainForm : Form
     private readonly Label _altitudeLabel = new();
     private readonly Label _speedLabel = new();
     private readonly Label _verticalSpeedLabel = new();
+    private readonly Label _landingLabel = new();
     private readonly Label _headingLabel = new();
     private readonly Label _groundLabel = new();
     private readonly Label _attitudeLabel = new();
@@ -141,6 +144,10 @@ public sealed class MainForm : Form
                 break;
             case "finishFlight":
                 FinishFlightClicked(this, EventArgs.Empty);
+                break;
+            case "dismissCompletion":
+                _completion = null;
+                SendStateToJS();
                 break;
             case "refreshContract":
                 _ = LoadActiveContractAsync();
@@ -232,6 +239,37 @@ public sealed class MainForm : Form
 
             startEnabled = _startButton.Enabled,
             finishEnabled = _finishButton.Enabled,
+            completionActive = _completion is not null,
+            completionRoute = _completion is null
+                ? ""
+                : $"{_completion.OriginCode} → {_completion.DestinationCode}",
+            completionAirports = _completion is null
+                ? ""
+                : $"{_completion.OriginName} → {_completion.DestinationName}",
+            completionCallsign = _completion?.Callsign ?? "",
+            completionAircraft = _completion is null
+                ? ""
+                : $"{_completion.Aircraft} · {_completion.Registration}",
+            completionDuration = _completion is null
+                ? ""
+                : $"{(int)_completion.Duration.TotalHours}h {_completion.Duration.Minutes:00}m",
+            completionDistance = _completion is null
+                ? ""
+                : $"{_completion.DistanceNauticalMiles:N0} nm",
+            completionPayload = $"{_completionPayloadKg:N0} kg",
+            completionLanding = _completion?.LandingRateFeetPerMinute is double rate
+                ? $"{rate:N0} FPM · {_completion.LandingGForce:N2} G"
+                : "Not recorded",
+            completionQuality = _completion?.LandingQualityScore is double quality
+                ? $"{quality:N0}%"
+                : "--",
+            completionGrossRevenue = _completion is null
+                ? ""
+                : Money(_completion.GrossRevenueCents),
+            completionPenalty = _completion is null
+                ? ""
+                : $"−{Money(_completion.LandingPenaltyCents)} ({_completion.LandingPenaltyPercent:N2}%)",
+            completionRevenue = _completion is null ? "" : Money(_completion.RevenueCents),
             loadPayloadEnabled = canApplyLoads,
             loadFuelEnabled = canApplyLoads && _contract?.RequiredFuelKg is not null,
             payloadButtonText = _contract is null
@@ -250,6 +288,7 @@ public sealed class MainForm : Form
             altitude = _altitudeLabel.Text,
             speed = _speedLabel.Text,
             verticalSpeed = _verticalSpeedLabel.Text,
+            landing = _landingLabel.Text,
             heading = _headingLabel.Text,
             ground = _groundLabel.Text,
             attitude = _attitudeLabel.Text,
@@ -484,6 +523,15 @@ public sealed class MainForm : Form
         _altitudeLabel.Text = $"{telemetry.AltitudeFeet:0} ft MSL  ·  {telemetry.AltitudeAglFeet:0} ft AGL";
         _speedLabel.Text = $"{telemetry.IndicatedAirspeedKnots:0} KIAS  ·  {telemetry.GroundSpeedKnots:0} kt ground";
         _verticalSpeedLabel.Text = $"{telemetry.VerticalSpeedFeetPerMinute:+0;-0;0} ft/min";
+        var touchdownRate = double.IsFinite(telemetry.TouchdownNormalVelocityFeetPerSecond)
+            ? $"{Math.Abs(telemetry.TouchdownNormalVelocityFeetPerSecond) * 60d:0} FPM"
+            : "-- FPM";
+        var currentG = double.IsFinite(telemetry.GForce) ? $"{telemetry.GForce:0.000} G" : "-- G";
+        var captured = _flight.LandingRateFeetPerMinute is double landingRate
+            && _flight.LandingGForce is double landingG
+            ? $" · captured {landingRate:0} FPM / {landingG:0.000} G"
+            : string.Empty;
+        _landingLabel.Text = $"SimVar {touchdownRate} / {currentG}{captured}";
         _headingLabel.Text = $"{telemetry.HeadingTrueDegrees:000}° true";
         _groundLabel.Text = telemetry.OnGround ? "On ground" : "Airborne";
         _attitudeLabel.Text = $"Pitch {telemetry.PitchDegrees:+0.0;-0.0;0.0}°  ·  Bank {telemetry.BankDegrees:+0.0;-0.0;0.0}°";
@@ -786,15 +834,15 @@ public sealed class MainForm : Form
                 ?? throw new InvalidOperationException("The active flight could not be recovered.");
             _finishButton.Enabled = false;
             SendStateToJS();
-            await _serverClient.FinishFlightAsync(flightId, telemetry);
+            var completionTelemetry = telemetry with
+            {
+                LandingRateFpm = _flight.LandingRateFeetPerMinute,
+                LandingGForce = _flight.LandingGForce,
+            };
+            _completionPayloadKg = _contract?.RequiredPayloadKg ?? 0;
+            _completion = await _serverClient.FinishFlightAsync(flightId, completionTelemetry);
             _flight.Finish();
             ResetAfterCompletedFlight();
-            MessageBox.Show(
-                this,
-                "The flight has ended. The server completed the contract and awarded your reward.",
-                "Flight complete",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
             await LoadActiveContractAsync();
         }
         catch (Exception exception)
@@ -891,4 +939,6 @@ public sealed class MainForm : Form
             _ => _flight.Phase.ToString(),
         };
     }
+
+    private static string Money(long cents) => $"$ {cents / 100d:N0}";
 }

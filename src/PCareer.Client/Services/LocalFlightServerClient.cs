@@ -15,9 +15,12 @@ public sealed class LocalFlightServerClient : IFlightServerClient
         // Phase 2 replaces this adapter with buffered HTTPS telemetry batches.
     }
 
-    public Task FinishFlightAsync(
+    public Task<FlightCompletion> FinishFlightAsync(
         Guid flightId,
         TelemetrySnapshot finalTelemetry,
-        CancellationToken cancellationToken = default) => Task.CompletedTask;
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(new FlightCompletion(
+            flightId, "DEV", "----", "Development departure", "----",
+            "Development arrival", "Development aircraft", "--", TimeSpan.Zero, 0,
+            finalTelemetry.LandingRateFpm, finalTelemetry.LandingGForce, null, 0, 0, 0, 0));
 }
-

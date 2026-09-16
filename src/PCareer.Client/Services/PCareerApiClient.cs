@@ -214,7 +214,7 @@ public sealed class PCareerApiClient : IFlightServerClient, IMissionClient, IDis
         _ = UploadTelemetryAsync(flightId, telemetry);
     }
 
-    public async Task FinishFlightAsync(
+    public async Task<FlightCompletion> FinishFlightAsync(
         Guid flightId,
         TelemetrySnapshot finalTelemetry,
         CancellationToken cancellationToken = default)
@@ -226,7 +226,22 @@ public sealed class PCareerApiClient : IFlightServerClient, IMissionClient, IDis
                 NormalizeTelemetryForServer(finalTelemetry)),
             cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
+        using var summaryResponse = await SendAuthenticatedAsync(
+            () => new HttpRequestMessage(HttpMethod.Get, "api/flights?limit=1"),
+            cancellationToken);
+        var records = await ReadRequiredAsync<List<FlightRecordDto>>(
+            summaryResponse,
+            cancellationToken);
+        var record = records.SingleOrDefault(item => item.FlightId == flightId.ToString())
+            ?? throw new InvalidOperationException("The completed flight summary is unavailable.");
         TelemetryStatusChanged?.Invoke(this, "Flight completed and confirmed by server.");
+        return new FlightCompletion(
+            flightId, record.Callsign, record.OriginIcao, record.OriginName,
+            record.DestinationIcao, record.DestinationName, record.Aircraft,
+            record.AircraftRegistration, TimeSpan.FromSeconds(record.RealDurationSeconds),
+            record.DistanceNm, record.LandingRateFpm, record.LandingGForce,
+            record.LandingQualityScore, record.LandingPenaltyPercent,
+            record.GrossRevenueCents, record.LandingPenaltyCents, record.RevenueCents);
     }
 
     public async Task CancelFlightAsync(
@@ -626,6 +641,25 @@ public sealed class PCareerApiClient : IFlightServerClient, IMissionClient, IDis
         string ContractId,
         DateTimeOffset StartedAt,
         bool HasAirborneTelemetry = false);
+
+    private sealed record FlightRecordDto(
+        string FlightId,
+        string Callsign,
+        string OriginIcao,
+        string OriginName,
+        string DestinationIcao,
+        string DestinationName,
+        string Aircraft,
+        string AircraftRegistration,
+        int RealDurationSeconds,
+        double DistanceNm,
+        double? LandingRateFpm,
+        double? LandingGForce,
+        double? LandingQualityScore,
+        double LandingPenaltyPercent,
+        long GrossRevenueCents,
+        long LandingPenaltyCents,
+        long RevenueCents);
 
     private sealed record TransmissionDto(
         string Status,

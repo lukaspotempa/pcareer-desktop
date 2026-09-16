@@ -34,6 +34,10 @@ public sealed class FlightSessionController
 
     public double? InitialPayloadKg { get; private set; }
 
+    public double? LandingRateFeetPerMinute { get; private set; }
+
+    public double? LandingGForce { get; private set; }
+
     private TelemetrySnapshot? _previousTelemetry;
 
     public string EvaluateReadiness(
@@ -152,6 +156,8 @@ public sealed class FlightSessionController
         StartedAt = telemetry.ObservedAt;
         InitialFuelKg = telemetry.FuelTotalKg;
         InitialPayloadKg = telemetry.PayloadWeightKg;
+        LandingRateFeetPerMinute = null;
+        LandingGForce = null;
         _previousTelemetry = telemetry;
         Phase = FlightPhase.Started;
     }
@@ -169,6 +175,8 @@ public sealed class FlightSessionController
         StartedAt = activeFlight.StartedAt;
         InitialFuelKg = telemetry.FuelTotalKg;
         InitialPayloadKg = telemetry.PayloadWeightKg;
+        LandingRateFeetPerMinute = null;
+        LandingGForce = null;
         _previousTelemetry = telemetry;
         Phase = telemetry.OnGround
             ? activeFlight.HasAirborneTelemetry
@@ -204,6 +212,10 @@ public sealed class FlightSessionController
             && telemetry.OnGround
             && telemetry.AltitudeAglFeet < LandedAltitudeAglCeilingFeet)
         {
+            LandingRateFeetPerMinute = LandingRateFrom(telemetry);
+            LandingGForce = double.IsFinite(telemetry.GForce)
+                ? telemetry.GForce
+                : null;
             Phase = FlightPhase.Landed;
         }
         _previousTelemetry = telemetry;
@@ -243,6 +255,8 @@ public sealed class FlightSessionController
         StartedAt = null;
         InitialFuelKg = null;
         InitialPayloadKg = null;
+        LandingRateFeetPerMinute = null;
+        LandingGForce = null;
         _previousTelemetry = null;
         Phase = FlightPhase.Ready;
     }
@@ -257,6 +271,8 @@ public sealed class FlightSessionController
         StartedAt = null;
         InitialFuelKg = null;
         InitialPayloadKg = null;
+        LandingRateFeetPerMinute = null;
+        LandingGForce = null;
         _previousTelemetry = null;
         Phase = FlightPhase.Ready;
     }
@@ -323,6 +339,17 @@ public sealed class FlightSessionController
     private static double LoadTolerance(double target) => Math.Max(1d, Math.Abs(target) * 0.03d);
 
     private static double ChangeTolerance(double target) => Math.Max(0.5d, Math.Abs(target) * 0.001d);
+
+    private static double? LandingRateFrom(TelemetrySnapshot telemetry)
+    {
+        if (double.IsFinite(telemetry.TouchdownNormalVelocityFeetPerSecond))
+        {
+            return Math.Abs(telemetry.TouchdownNormalVelocityFeetPerSecond) * 60d;
+        }
+        return double.IsFinite(telemetry.VerticalSpeedFeetPerMinute)
+            ? Math.Abs(telemetry.VerticalSpeedFeetPerMinute)
+            : null;
+    }
 
     internal static bool AircraftMatches(
         ContractAssignment contract,

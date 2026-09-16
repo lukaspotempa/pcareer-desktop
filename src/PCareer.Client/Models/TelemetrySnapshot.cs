@@ -24,7 +24,11 @@ public sealed record TelemetrySnapshot(
     int EngineCount,
     double GearPositionPercent,
     bool ParkingBrakeSet,
-    double PayloadStationWeightPounds = double.NaN)
+    double PayloadStationWeightPounds = double.NaN,
+    double GForce = double.NaN,
+    double TouchdownNormalVelocityFeetPerSecond = double.NaN,
+    double? LandingRateFpm = null,
+    double? LandingGForce = null)
 {
     private const double KilogramsPerPound = 0.45359237;
 

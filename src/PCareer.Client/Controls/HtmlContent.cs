@@ -96,9 +96,41 @@ body{padding:24px 28px 20px;display:flex;flex-direction:column;gap:16px;overflow
 
 /* ── footer ── */
 .footer{text-align:center;font-size:11px;color:var(--text5);padding-top:4px}
+.completion-screen{display:none;position:fixed;inset:0;z-index:20;overflow-y:auto;padding:28px;
+  background:radial-gradient(circle at 50% 0%,rgba(52,211,153,.13),transparent 38%),var(--bg)}
+.completion-card{max-width:720px;margin:0 auto;border:1px solid rgba(52,211,153,.2);
+  border-radius:20px;background:var(--surface);padding:28px}
+.completion-title{text-align:center;font-size:26px;font-weight:700;color:var(--text)}
+.completion-subtitle{text-align:center;color:var(--emerald);font-size:11px;font-weight:700;
+  letter-spacing:.16em;text-transform:uppercase;margin-bottom:8px}
+.completion-route{text-align:center;font:700 30px Consolas,monospace;margin-top:22px}
+.summary-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:24px}
+.summary-item{border:1px solid var(--border);border-radius:10px;background:rgba(255,255,255,.02);padding:14px}
+.summary-item.emphasis{border-color:rgba(52,211,153,.18)}
 </style>
 </head>
 <body>
+
+<div class="completion-screen" id="completionScreen">
+  <div class="completion-card">
+    <div class="completion-title">Flight completed</div>
+    <div class="completion-route" id="completionRoute">---- → ----</div>
+    <div class="field-value" id="completionAirports" style="text-align:center">--</div>
+    <div class="summary-grid">
+      <div class="summary-item"><div class="field-label">Callsign</div><div class="field-value" id="completionCallsign">--</div></div>
+      <div class="summary-item"><div class="field-label">Aircraft</div><div class="field-value" id="completionAircraft">--</div></div>
+      <div class="summary-item"><div class="field-label">Flight time</div><div class="field-value" id="completionDuration">--</div></div>
+      <div class="summary-item"><div class="field-label">Distance</div><div class="field-value" id="completionDistance">--</div></div>
+      <div class="summary-item"><div class="field-label">Payload</div><div class="field-value" id="completionPayload">--</div></div>
+      <div class="summary-item"><div class="field-label">Landing</div><div class="field-value" id="completionLanding">--</div></div>
+      <div class="summary-item emphasis"><div class="field-label">Landing quality</div><div class="field-value large" id="completionQuality">--</div></div>
+      <div class="summary-item"><div class="field-label">Gross revenue</div><div class="field-value" id="completionGrossRevenue">--</div></div>
+      <div class="summary-item"><div class="field-label">Landing penalty</div><div class="field-value" id="completionPenalty" style="color:var(--amber)">--</div></div>
+      <div class="summary-item emphasis"><div class="field-label">Final revenue</div><div class="field-value large" id="completionRevenue" style="color:var(--emerald)">--</div></div>
+    </div>
+    <button class="btn primary" style="width:100%;margin-top:22px" onclick="post({action:'dismissCompletion'})">Continue</button>
+  </div>
+</div>
 
 <div class="header">
   <div class="logo"><img src="{{BRAND_LOGO_DATA_URI}}" alt="Virtual Pilot Network logo" /></div>
@@ -188,6 +220,7 @@ body{padding:24px 28px 20px;display:flex;flex-direction:column;gap:16px;overflow
     <div><div class="field-label">Altitude</div><div class="field-value" id="altitude">--</div></div>
     <div><div class="field-label">Airspeed</div><div class="field-value" id="speed">--</div></div>
     <div><div class="field-label">Vertical speed</div><div class="field-value" id="verticalSpeed">--</div></div>
+    <div><div class="field-label">Touchdown / G-force</div><div class="field-value" id="landing">--</div></div>
     <div><div class="field-label">Heading</div><div class="field-value" id="heading">--</div></div>
     <div><div class="field-label">Flight status</div><div class="field-value" id="ground">--</div></div>
     <div><div class="field-label">Pitch / bank</div><div class="field-value" id="attitude">--</div></div>
@@ -220,6 +253,12 @@ window.chrome?.webview?.addEventListener('message',function(e){
   setDot('stateDot',s.stateDot);
   setText('readyText',s.readyText||'');
   setDot('readyDot',s.readyDot);
+
+  document.getElementById('completionScreen').style.display=s.completionActive?'block':'none';
+  if(s.completionActive){
+    ['Route','Airports','Callsign','Aircraft','Duration','Distance','Payload','Landing','Quality','GrossRevenue','Penalty','Revenue']
+      .forEach(function(k){setText('completion'+k,s['completion'+k]||'--')});
+  }
 
   var missionPanel=document.getElementById('missionPanel');
   missionPanel.style.display=s.missionActive?'block':'none';
@@ -257,6 +296,7 @@ window.chrome?.webview?.addEventListener('message',function(e){
     setText('altitude',s.altitude||'--');
     setText('speed',s.speed||'--');
     setText('verticalSpeed',s.verticalSpeed||'--');
+    setText('landing',s.landing||'--');
     setText('heading',s.heading||'--');
     setText('ground',s.ground||'--');
     setText('attitude',s.attitude||'--');

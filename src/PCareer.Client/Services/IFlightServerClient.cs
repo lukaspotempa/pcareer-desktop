@@ -11,9 +11,8 @@ public interface IFlightServerClient
 
     void QueueTelemetry(Guid flightId, TelemetrySnapshot telemetry);
 
-    Task FinishFlightAsync(
+    Task<FlightCompletion> FinishFlightAsync(
         Guid flightId,
         TelemetrySnapshot finalTelemetry,
         CancellationToken cancellationToken = default);
 }
-
