@@ -28,7 +28,8 @@ public sealed record TelemetrySnapshot(
     double GForce = double.NaN,
     double TouchdownNormalVelocityFeetPerSecond = double.NaN,
     double? LandingRateFpm = null,
-    double? LandingGForce = null)
+    double? LandingGForce = null,
+    bool SimRateIncreasedDuringFlight = false)
 {
     private const double KilogramsPerPound = 0.45359237;
 

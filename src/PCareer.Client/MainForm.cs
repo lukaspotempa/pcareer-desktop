@@ -511,7 +511,12 @@ public sealed class MainForm : Form
         if (_flight.FlightId is Guid flightId
             && _flight.Phase is FlightPhase.Started or FlightPhase.Airborne or FlightPhase.Landed)
         {
-            _serverClient.QueueTelemetry(flightId, telemetry);
+            _serverClient.QueueTelemetry(
+                flightId,
+                telemetry with
+                {
+                    SimRateIncreasedDuringFlight = _flight.SimRateIncreased,
+                });
         }
 
         _aircraftLabel.Text = string.IsNullOrWhiteSpace(telemetry.AircraftAtcModel)
@@ -838,6 +843,7 @@ public sealed class MainForm : Form
             {
                 LandingRateFpm = _flight.LandingRateFeetPerMinute,
                 LandingGForce = _flight.LandingGForce,
+                SimRateIncreasedDuringFlight = _flight.SimRateIncreased,
             };
             _completionPayloadKg = _contract?.RequiredPayloadKg ?? 0;
             _completion = await _serverClient.FinishFlightAsync(flightId, completionTelemetry);

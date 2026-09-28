@@ -38,6 +38,8 @@ public sealed class FlightSessionController
 
     public double? LandingGForce { get; private set; }
 
+    public bool SimRateIncreased { get; private set; }
+
     private TelemetrySnapshot? _previousTelemetry;
 
     public string EvaluateReadiness(
@@ -158,6 +160,7 @@ public sealed class FlightSessionController
         InitialPayloadKg = telemetry.PayloadWeightKg;
         LandingRateFeetPerMinute = null;
         LandingGForce = null;
+        SimRateIncreased = false;
         _previousTelemetry = telemetry;
         Phase = FlightPhase.Started;
     }
@@ -177,6 +180,7 @@ public sealed class FlightSessionController
         InitialPayloadKg = telemetry.PayloadWeightKg;
         LandingRateFeetPerMinute = null;
         LandingGForce = null;
+        SimRateIncreased = activeFlight.SimRateIncreased;
         _previousTelemetry = telemetry;
         Phase = telemetry.OnGround
             ? activeFlight.HasAirborneTelemetry
@@ -199,6 +203,11 @@ public sealed class FlightSessionController
         {
             Phase = FlightPhase.Cancelled;
             return cancellationReason;
+        }
+
+        if (telemetry.SimulationRate > 1.01)
+        {
+            SimRateIncreased = true;
         }
 
         if (Phase is FlightPhase.Started
@@ -257,6 +266,7 @@ public sealed class FlightSessionController
         InitialPayloadKg = null;
         LandingRateFeetPerMinute = null;
         LandingGForce = null;
+        SimRateIncreased = false;
         _previousTelemetry = null;
         Phase = FlightPhase.Ready;
     }
@@ -273,6 +283,7 @@ public sealed class FlightSessionController
         InitialPayloadKg = null;
         LandingRateFeetPerMinute = null;
         LandingGForce = null;
+        SimRateIncreased = false;
         _previousTelemetry = null;
         Phase = FlightPhase.Ready;
     }
@@ -287,9 +298,13 @@ public sealed class FlightSessionController
         {
             return "The simulator aircraft changed after the flight became active.";
         }
-        if (telemetry.SlewActive || Math.Abs(telemetry.SimulationRate - 1d) > 0.01)
+        if (telemetry.SlewActive)
         {
-            return "Slew mode or a simulation rate other than 1× was detected.";
+            return "Slew mode was detected.";
+        }
+        if (telemetry.SimulationRate < 0.99)
+        {
+            return "A simulation rate below 1× was detected.";
         }
         if (telemetry.FuelTotalKg > InitialFuelKg.Value + ChangeTolerance(InitialFuelKg.Value))
         {

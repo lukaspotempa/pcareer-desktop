@@ -198,7 +198,8 @@ public sealed class PCareerApiClient : IFlightServerClient, IMissionClient, IDis
             Guid.Parse(flight.FlightId),
             flight.ContractId,
             flight.StartedAt,
-            flight.HasAirborneTelemetry);
+            flight.HasAirborneTelemetry,
+            flight.SimRateIncreased);
     }
 
     public void QueueTelemetry(Guid flightId, TelemetrySnapshot telemetry)
@@ -640,7 +641,8 @@ public sealed class PCareerApiClient : IFlightServerClient, IMissionClient, IDis
         string FlightId,
         string ContractId,
         DateTimeOffset StartedAt,
-        bool HasAirborneTelemetry = false);
+        bool HasAirborneTelemetry = false,
+        bool SimRateIncreased = false);
 
     private sealed record FlightRecordDto(
         string FlightId,

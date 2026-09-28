@@ -4,4 +4,5 @@ public sealed record ActiveFlightSession(
     Guid FlightId,
     string ContractId,
     DateTimeOffset StartedAt,
-    bool HasAirborneTelemetry);
+    bool HasAirborneTelemetry,
+    bool SimRateIncreased = false);

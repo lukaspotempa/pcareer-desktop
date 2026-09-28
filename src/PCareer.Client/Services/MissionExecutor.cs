@@ -452,8 +452,7 @@ public sealed class MissionExecutor
             || DateTimeOffset.UtcNow - telemetry.ObservedAt > TelemetryFreshness
             || telemetry.SlewActive
             || telemetry.ObservedAt > DateTimeOffset.UtcNow + TimeSpan.FromSeconds(2)
-            || telemetry.SimulationRate < 0.95d
-            || telemetry.SimulationRate > 1.05d)
+            || telemetry.SimulationRate < 0.95d)
         {
             Publish(SnapshotFor(mission, "Waiting for fresh simulator telemetry."));
             return null;

@@ -284,6 +284,11 @@ Assert(controller.Phase == FlightPhase.Started, "Start must enter Started.");
 controller.Observe(Sample(onGround: false, altitudeAgl: 800));
 Assert(controller.Phase == FlightPhase.Airborne, "Leaving the ground must enter Airborne.");
 
+var simRateResult = controller.Observe(
+    Sample(onGround: false, altitudeAgl: 800) with { SimulationRate = 2 });
+Assert(simRateResult is null, "Increasing the simulation rate must not cancel the flight.");
+Assert(controller.SimRateIncreased, "A simulation-rate increase must remain tracked.");
+
 controller.Observe(Sample(onGround: true, altitudeAgl: 8) with
 {
     TouchdownNormalVelocityFeetPerSecond = -5,
@@ -297,6 +302,7 @@ Assert(
 Assert(
     controller.LandingGForce == 1.4,
     "Touchdown must capture the current G-force sample.");
+Assert(controller.SimRateIncreased, "Landing must not clear simulation-rate tracking.");
 
 controller.Finish();
 Assert(controller.Phase == FlightPhase.Finished, "Finish must enter Finished.");
@@ -308,6 +314,7 @@ Assert(controller.StartedAt is null, "Reset must clear the previous start time."
 Assert(
     controller.LandingRateFeetPerMinute is null && controller.LandingGForce is null,
     "Reset must clear the previous landing values.");
+Assert(!controller.SimRateIncreased, "Reset must restore normal-speed bonus eligibility.");
 Assert(!controller.CanFinish, "A reset flight must not remain finishable.");
 Assert(
     controller.EvaluateReadiness(true, contract, onGround) == "Ready to begin loading.",
