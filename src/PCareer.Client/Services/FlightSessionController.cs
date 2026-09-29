@@ -205,7 +205,7 @@ public sealed class FlightSessionController
             return cancellationReason;
         }
 
-        if (telemetry.SimulationRate > 1.01)
+        if (Math.Abs(telemetry.SimulationRate - 1d) > 0.01)
         {
             SimRateIncreased = true;
         }
@@ -301,10 +301,6 @@ public sealed class FlightSessionController
         if (telemetry.SlewActive)
         {
             return "Slew mode was detected.";
-        }
-        if (telemetry.SimulationRate < 0.99)
-        {
-            return "A simulation rate below 1× was detected.";
         }
         if (telemetry.FuelTotalKg > InitialFuelKg.Value + ChangeTolerance(InitialFuelKg.Value))
         {

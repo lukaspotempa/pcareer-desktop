@@ -284,6 +284,11 @@ Assert(controller.Phase == FlightPhase.Started, "Start must enter Started.");
 controller.Observe(Sample(onGround: false, altitudeAgl: 800));
 Assert(controller.Phase == FlightPhase.Airborne, "Leaving the ground must enter Airborne.");
 
+var reducedSimRateResult = controller.Observe(
+    Sample(onGround: false, altitudeAgl: 800) with { SimulationRate = 0.5 });
+Assert(reducedSimRateResult is null, "Reducing the simulation rate must not cancel the flight.");
+Assert(controller.SimRateIncreased, "A reduced simulation rate must remain tracked for bonus eligibility.");
+
 var simRateResult = controller.Observe(
     Sample(onGround: false, altitudeAgl: 800) with { SimulationRate = 2 });
 Assert(simRateResult is null, "Increasing the simulation rate must not cancel the flight.");
